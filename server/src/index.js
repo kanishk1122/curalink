@@ -69,6 +69,7 @@ app.use((req, res, next) => {
 
 const chatRoutes = require('./routes/chat.routes');
 const authRoutes = require('./routes/auth.routes');
+const docRoutes = require('./routes/doc.routes');
 const { setupSocketHandlers } = require('./controllers/chat.controller');
 
 // Initialize socket handlers
@@ -77,6 +78,7 @@ setupSocketHandlers(io);
 // Routes
 app.use('/api/chat', chatRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/docs', docRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });

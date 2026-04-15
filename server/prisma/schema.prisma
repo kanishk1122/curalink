@@ -36,6 +36,7 @@ model Message {
   chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
   role      String   // 'user' or 'assistant'
   content   String   @db.Text
+  metadata  Json?    // For patientContext and lab report highlights
   sources   Source[]
   createdAt DateTime @default(now())
 }

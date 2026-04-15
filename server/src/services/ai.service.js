@@ -114,9 +114,9 @@ class AIService {
   }
 
   /**
-   * Reason over research results with High-Fidelity Formatting and Stop Sequences.
+   * Reason over research results with High-Fidelity Formatting and Patient Context.
    */
-  async *reasonOverResearchStream(userQuery, researchResults, history = [], userLocation = '') {
+  async *reasonOverResearchStream(userQuery, researchResults, history = [], userLocation = '', patientData = null) {
     const messages = history.map(m => 
       m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content)
     );
@@ -124,10 +124,19 @@ class AIService {
 
     const isFollowUp = messages.length > 2;
 
+    const patientInstructions = patientData 
+      ? `STRICT PATIENT CONTEXT:
+         - You have been provided with the patient's actual medical lab report: "${patientData.raw.slice(0, 1500)}"
+         - You MUST interpret your research findings in the context of these specific patient results.
+         - Address any values that are High/Low or outside stable reference ranges found in their data.`
+      : "";
+
     const systemPrompt = isFollowUp 
       ? `You are Curalink. Respond with medical precision. Use Markdown Headers and internal links [ID](Link). NEVER write a bibliography.`
       : `You are Curalink, a world-class health companion. 
          
+         ${patientInstructions}
+
          STRICT FORMATTING RULES (WALL-OF-TEXT PREVENTION):
          1. MANDATORY SPACING: You MUST use exactly two (2) newlines (\\n\\n) between every header and every paragraph.
          2. NO JAMMING: NEVER put a header (##) on the same line as other text.
@@ -141,7 +150,7 @@ class AIService {
 
          REQUIRED STRUCTURE:
          ## 📋 Executive Summary
-         [Brief medical overview]
+         [Brief medical overview. You MUST start by explicitly mentioning any uploaded patient lab results used to anchor this research (e.g. "Analyzing based on your elevated CRP markers...")]
          
          ## 🧬 Deep Biochemical Analysis
          [Molecular mechanics and pathways]

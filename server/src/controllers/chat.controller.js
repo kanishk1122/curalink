@@ -9,7 +9,7 @@ const activeStopSignals = new Map();
  * Handle new chat creation and messages
  */
 const sendMessage = async (req, res) => {
-  const { chatId, message, context } = req.body;
+  const { chatId, message, context, patientData } = req.body;
   const userId = req.user?.id || null;
   const sessionId = req.sessionId; // From sessionMiddleware
   
@@ -44,12 +44,19 @@ const sendMessage = async (req, res) => {
     // Clear any previous stop signal for this chat
     activeStopSignals.delete(chat.id);
 
-    // Save User Message
+    // Save User Message with persistence of Lab Report Context
     await prisma.message.create({
-      data: { chatId: chat.id, role: 'user', content: message }
+      data: { 
+        chatId: chat.id, 
+        role: 'user', 
+        content: message,
+        metadata: patientData ? { 
+          patientContext: patientData,
+          promptInstruction: '## 📋 Executive Summary\n[Brief medical overview. You MUST start by explicitly mentioning any uploaded patient lab results used to anchor this research (e.g. "Analyzing based on your elevated CRP markers...")]'
+        } : null
+      }
     });
 
-    // ... [Rest of original sendMessage logic remains same]
     // 1. Expand Query
     req.io.emit('progress', { chatId: chat.id, message: 'Performing semantic feature extraction and agent routing...' });
     let expanded = await aiService.expandQuery(message, context);
@@ -89,7 +96,7 @@ const sendMessage = async (req, res) => {
     let fullResponse = '';
     let stopped = false;
     
-    const steamGenerator = aiService.reasonOverResearchStream(message, topResults, history, expanded.location);
+    const steamGenerator = aiService.reasonOverResearchStream(message, topResults, history, expanded.location, patientData);
     
     try {
       for await (const chunk of steamGenerator) {

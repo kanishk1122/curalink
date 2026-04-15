@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { logout } from './authSlice';
 
-const API_BASE = 'https://whale-app-a4lge.ondigitalocean.app/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -98,7 +98,8 @@ const chatSlice = createSlice({
       state.messages = [];
     },
     addProgress: (state, action) => {
-      if (action.payload.chatId === state.activeChatId) {
+      // Allow progress if it matches active chat OR if we are in a 'New Research' state (null activeChatId)
+      if (action.payload.chatId === state.activeChatId || !state.activeChatId) {
         state.progress = [...state.progress.slice(-2), action.payload];
       }
     },
@@ -123,6 +124,11 @@ const chatSlice = createSlice({
       }
       state.streamingBuffers[chatId] += chunk;
       
+      // If we are in 'New Research' mode (null) and we get our first chunk, adopt this chatId immediately
+      if (!state.activeChatId && state.loading) {
+        state.activeChatId = chatId;
+      }
+
       if (chatId === state.activeChatId) {
         state.isStreaming = true;
         const lastMsg = state.messages[state.messages.length - 1];
