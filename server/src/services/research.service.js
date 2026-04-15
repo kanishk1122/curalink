@@ -1,6 +1,5 @@
 const axios = require('axios');
 const https = require('https');
-const dns = require('dns');
 const dotenv = require('dotenv');
 
 dotenv.config();
@@ -16,16 +15,12 @@ class ResearchService {
     this.clinicalTrialsBaseUrl = 'https://clinicaltrials.gov/api/v2/studies';
     this.ncbiApiKey = process.env.NCBI_API_KEY;
 
-    // THE BULLETPROOF AGENT: Force IPv4 lookup directly on the socket
+    // THE CLEAN AGENT: Natively force IPv4 only
     this.httpsAgent = new https.Agent({
       keepAlive: true,
       maxSockets: 50,
       timeout: 15000,
-      lookup: (hostname, options, callback) => {
-        dns.lookup(hostname, { family: 4 }, (err, address, family) => {
-          callback(err, address, family);
-        });
-      }
+      family: 4 
     });
 
     // Identity headers for medical authority (NCBI Recommended Format)
