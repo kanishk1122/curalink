@@ -127,7 +127,7 @@ const MessageItem = React.memo(({ msg }) => {
                 <motion.a {...props} whileHover={{ color: '#2563eb' }} className="inline-flex items-center gap-0.5 font-bold text-blue-600 underline underline-offset-4 decoration-blue-200 hover:decoration-blue-500 transition-all cursor-alias mx-0.5" target="_blank" rel="noreferrer" />
               )
             }}>
-              {msg.content}
+              {msg.content.replace(/^(#+)([^#\s])/gm, '$1 $2')}
             </ReactMarkdown>
           </div>
         </motion.div>
@@ -227,7 +227,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    scrollToBottom(messages.length <= 2 ? 'auto' : 'smooth');
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const isStationary = scrollHeight - scrollTop - clientHeight < 150; // Threshold to detect if user is near bottom
+    
+    if (isStationary || messages.length <= 1) {
+      scrollToBottom(messages.length <= 2 ? 'auto' : 'smooth');
+    }
   }, [messages.length, messages[messages.length-1]?.content]);
 
   useEffect(() => {
