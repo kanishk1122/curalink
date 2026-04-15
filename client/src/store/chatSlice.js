@@ -21,9 +21,21 @@ export const fetchContext = createAsyncThunk('chat/fetchContext', async () => {
 });
 
 export const loadChat = createAsyncThunk('chat/loadChat', async (id) => {
-  const response = await api.get(`/chat/${id}`);
+  const response = await api.get(`/chat/${id}?limit=20`);
   return { id, data: response.data };
 });
+
+export const fetchMoreHistory = createAsyncThunk(
+  'chat/fetchMoreHistory',
+  async ({ chatId, cursorId }, { rejectWithValue }) => {
+    try {
+      const response = await api.get(`/chat/${chatId}?cursor=${cursorId}&limit=20`);
+      return response.data;
+    } catch (err) {
+      return rejectWithValue(err.response.data);
+    }
+  }
+);
 
 export const sendMessage = createAsyncThunk(
   'chat/sendMessage',
@@ -69,7 +81,9 @@ const initialState = {
   showModal: false,
   sidebarOpen: true,
   streamingChatId: null,
-  error: null
+  error: null,
+  hasMoreHistory: true, // Tracks if there are older messages in DB
+  isFetchingMore: false
 };
 
 const chatSlice = createSlice({
@@ -211,6 +225,9 @@ const chatSlice = createSlice({
       })
       .addCase(loadChat.pending, (state, action) => {
         state.loading = true;
+        state.hasMoreHistory = true; // Reset on new chat load
+        state.messages = []; // ATOMIC CLEAR: Fix flickering of old chat
+        state.progress = []; 
         const targetChatId = action.meta.arg;
         state.activeChatId = targetChatId;
         state.isStreaming = !!state.streamingBuffers[targetChatId] || state.activeStreamIds.includes(targetChatId);
@@ -222,6 +239,11 @@ const chatSlice = createSlice({
         
         let messages = action.payload.data.messages || [];
         
+        // Pagination check
+        if (messages.length < 20) {
+          state.hasMoreHistory = false;
+        }
+
         if (state.streamingBuffers[chatId]) {
           messages.push({
             id: 'streaming-asst-' + chatId,
@@ -235,12 +257,29 @@ const chatSlice = createSlice({
 
         state.messages = messages;
         state.disease = action.payload.data.title || '';
+        state.progress = [];
         
         const lastAsstMsg = [...state.messages].reverse().find(m => m.role === 'assistant');
         if (lastAsstMsg && lastAsstMsg.sources) {
            const locSource = lastAsstMsg.sources.find(s => s.location);
            if (locSource) state.location = locSource.location;
         }
+      })
+      .addCase(fetchMoreHistory.pending, (state) => {
+        state.isFetchingMore = true;
+      })
+      .addCase(fetchMoreHistory.fulfilled, (state, action) => {
+        state.isFetchingMore = false;
+        const newMessages = action.payload.messages || [];
+        if (newMessages.length < 20) {
+          state.hasMoreHistory = false;
+        }
+        // Prepend new messages to the beginning of the list
+        state.messages = [...newMessages, ...state.messages];
+      })
+      .addCase(fetchMoreHistory.rejected, (state) => {
+        state.isFetchingMore = false;
+        state.hasMoreHistory = false;
       })
       .addCase(fetchChats.fulfilled, (state, action) => {
         state.chats = action.payload;

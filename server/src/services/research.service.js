@@ -32,16 +32,25 @@ class ResearchService {
   /**
    * Helper for Exponential Backoff Retries
    */
-  async _retryRequest(fn, retries = 2, delay = 1500) {
+  async _retryRequest(fn, retries = 3, delay = 2000) {
     try {
       return await fn();
     } catch (error) {
-      if (retries <= 0 || (error.code !== 'ETIMEDOUT' && !error.message.includes('timeout'))) {
+      const isRetryable = 
+        error.code === 'ETIMEDOUT' || 
+        error.code === 'ECONNRESET' || 
+        error.code === 'ECONNABORTED' ||
+        error.code === 'EADDRINUSE' ||
+        error.code === 'EPIPE' ||
+        error.message.toLowerCase().includes('timeout') ||
+        error.message.toLowerCase().includes('socket hang up');
+
+      if (retries <= 0 || !isRetryable) {
         throw error;
       }
-      console.log(`[ResearchService] Request failed, retrying in ${delay}ms... (${retries} retries left)`);
+      console.log(`[ResearchService] Request failed (${error.code || error.message}), retrying in ${delay}ms... (${retries} retries left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return this._retryRequest(fn, retries - 1, delay * 2);
+      return this._retryRequest(fn, retries - 1, delay * 1.5);
     }
   }
 

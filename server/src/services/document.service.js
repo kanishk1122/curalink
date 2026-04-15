@@ -49,8 +49,7 @@ class DocumentService {
   async _processImage(filePath) {
     const { data: { text } } = await Tesseract.recognize(
       filePath,
-      'eng',
-      { logger: m => console.log(`[OCR Progress] ${m.status}: ${Math.round(m.progress * 100)}%`) }
+      'eng'
     );
     return text;
   }

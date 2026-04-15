@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const redis = require('../config/redis');
 const researchService = require('../services/research.service');
 const aiService = require('../services/ai.service');
 
@@ -43,6 +44,15 @@ const sendMessage = async (req, res) => {
     
     // Clear any previous stop signal for this chat
     activeStopSignals.delete(chat.id);
+
+    // INHERITANCE LOGIC: If incoming patientData is null, search history for existing context
+    let contextToUse = patientData;
+    if (!contextToUse && chat.messages && chat.messages.length > 0) {
+      const msgWithContext = [...chat.messages].reverse().find(m => m.metadata && m.metadata.patientContext);
+      if (msgWithContext) {
+        contextToUse = msgWithContext.metadata.patientContext;
+      }
+    }
 
     // Save User Message with persistence of Lab Report Context
     await prisma.message.create({
@@ -96,7 +106,7 @@ const sendMessage = async (req, res) => {
     let fullResponse = '';
     let stopped = false;
     
-    const steamGenerator = aiService.reasonOverResearchStream(message, topResults, history, expanded.location, patientData);
+    const steamGenerator = aiService.reasonOverResearchStream(message, topResults, history, expanded.location, contextToUse);
     
     try {
       for await (const chunk of steamGenerator) {
@@ -135,6 +145,10 @@ const sendMessage = async (req, res) => {
 
       activeStopSignals.delete(chat.id);
 
+      // CACHE INVALIDATION: Purge sidebar chats cache for this user/session
+      const cacheKey = `chats:${userId || sessionId}`;
+      await redis.del(cacheKey);
+
       return res.json({
         chatId: chat.id,
         response: fullResponse,
@@ -165,16 +179,29 @@ const setupSocketHandlers = (io) => {
 
 const getChatHistory = async (req, res) => {
   const { id } = req.params;
+  const { cursor, limit = 20 } = req.query; // Cursor is the 'createdAt' timestamp of the oldest message
   const userId = req.user?.id || null;
   const sessionId = req.sessionId;
 
   try {
+    // 1. Try Cache for the initial page (no cursor)
+    const cacheKey = `history:${id}:${cursor || 'start'}`;
+    if (!cursor) {
+      const cached = await redis.get(cacheKey);
+      if (cached) return res.json(cached);
+    }
+
     const chat = await prisma.chat.findUnique({
       where: { id },
       include: { 
         messages: { 
           include: { sources: true },
-          orderBy: { createdAt: 'asc' }
+          take: parseInt(limit),
+          ...(cursor && { 
+            skip: 1, // Skip the cursor message itself
+            cursor: { id: cursor } 
+          }),
+          orderBy: { createdAt: 'desc' } // Fetch newest first for pagination
         } 
       }
     });
@@ -187,8 +214,17 @@ const getChatHistory = async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to view this research history' });
     }
 
+    // Re-sort to ascending for the client view
+    chat.messages.reverse();
+
+    // Cache initial view for 5 mins
+    if (!cursor) {
+      await redis.set(cacheKey, chat, { ex: 300 });
+    }
+
     res.json(chat);
   } catch (error) {
+    console.error('GetHistory Error:', error);
     res.status(500).json({ error: 'Failed to fetch history' });
   }
 };
@@ -197,14 +233,29 @@ const listChats = async (req, res) => {
   try {
     const userId = req.user?.id || null;
     const sessionId = req.sessionId;
+    const { page = 1, limit = 50 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // 1. Try Cache
+    const cacheKey = `chats:${userId || sessionId}`;
+    // Only cache the first page for simplicity
+    if (parseInt(page) === 1) {
+      const cached = await redis.get(cacheKey);
+      if (cached) return res.json(cached);
+    }
 
     // Filter strictly by the current user session
-    // If logged in: only show user chats.
-    // If guest: only show chats matching the current guest sessionId.
     const chats = await prisma.chat.findMany({
       where: userId ? { userId } : { userId: null, sessionId },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { updatedAt: 'desc' },
+      skip,
+      take: parseInt(limit)
     });
+
+    if (parseInt(page) === 1) {
+      await redis.set(cacheKey, chats, { ex: 600 }); // Cache for 10 mins
+    }
+
     res.json(chats);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch chats' });
