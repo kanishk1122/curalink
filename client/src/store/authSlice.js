@@ -3,11 +3,16 @@ import axios from 'axios';
 
 const API_BASE = 'http://localhost:5000/api';
 
+// Create central axios instance for global credentials handling
+const api = axios.create({
+  baseURL: API_BASE,
+  withCredentials: true // MANDATORY for secure cookie auth
+});
+
 // Async Thunks
 export const register = createAsyncThunk('auth/register', async (userData, { rejectWithValue }) => {
   try {
-    const response = await axios.post(`${API_BASE}/auth/register`, userData);
-    localStorage.setItem('token', response.data.token);
+    const response = await api.post(`/auth/register`, userData);
     return response.data;
   } catch (err) {
     return rejectWithValue(err.response.data);
@@ -16,8 +21,7 @@ export const register = createAsyncThunk('auth/register', async (userData, { rej
 
 export const login = createAsyncThunk('auth/login', async (credentials, { rejectWithValue }) => {
   try {
-    const response = await axios.post(`${API_BASE}/auth/login`, credentials);
-    localStorage.setItem('token', response.data.token);
+    const response = await api.post(`/auth/login`, credentials);
     return response.data;
   } catch (err) {
     return rejectWithValue(err.response.data);
@@ -26,8 +30,7 @@ export const login = createAsyncThunk('auth/login', async (credentials, { reject
 
 export const googleLogin = createAsyncThunk('auth/googleLogin', async (credential, { rejectWithValue }) => {
   try {
-    const response = await axios.post(`${API_BASE}/auth/google`, { credential });
-    localStorage.setItem('token', response.data.token);
+    const response = await api.post(`/auth/google`, { credential });
     return response.data;
   } catch (err) {
     return rejectWithValue(err.response.data);
@@ -36,21 +39,24 @@ export const googleLogin = createAsyncThunk('auth/googleLogin', async (credentia
 
 export const fetchProfile = createAsyncThunk('auth/fetchProfile', async (_, { rejectWithValue }) => {
   try {
-    const token = localStorage.getItem('token');
-    if (!token) return null;
-    const response = await axios.get(`${API_BASE}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const response = await api.get(`/auth/me`);
     return response.data;
   } catch (err) {
-    localStorage.removeItem('token');
+    return rejectWithValue(err.response.data);
+  }
+});
+
+export const logout = createAsyncThunk('auth/logout', async (_, { rejectWithValue }) => {
+  try {
+    await api.post(`/auth/logout`);
+    return true;
+  } catch (err) {
     return rejectWithValue(err.response.data);
   }
 });
 
 const initialState = {
   user: null,
-  token: localStorage.getItem('token'),
   isAuthenticated: false,
   loading: false,
   error: null
@@ -60,19 +66,24 @@ const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    logout: (state) => {
-      localStorage.removeItem('token');
-      state.user = null;
-      state.token = null;
-      state.isAuthenticated = false;
-      state.error = null;
-    },
     clearError: (state) => {
       state.error = null;
     }
   },
   extraReducers: (builder) => {
     builder
+      // Logout
+      .addCase(logout.fulfilled, (state) => {
+        state.user = null;
+        state.isAuthenticated = false;
+        state.error = null;
+      })
+      .addCase(logout.rejected, (state) => {
+        // Even if the API call fails, we clear state for security
+        state.user = null;
+        state.isAuthenticated = false;
+        state.error = null;
+      })
       // Register
       .addCase(register.pending, (state) => {
         state.loading = true;
@@ -82,7 +93,6 @@ const authSlice = createSlice({
         state.loading = false;
         state.isAuthenticated = true;
         state.user = action.payload.user;
-        state.token = action.payload.token;
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
@@ -97,7 +107,6 @@ const authSlice = createSlice({
         state.loading = false;
         state.isAuthenticated = true;
         state.user = action.payload.user;
-        state.token = action.payload.token;
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -112,7 +121,6 @@ const authSlice = createSlice({
         state.loading = false;
         state.isAuthenticated = true;
         state.user = action.payload.user;
-        state.token = action.payload.token;
       })
       .addCase(googleLogin.rejected, (state, action) => {
         state.loading = false;
@@ -128,5 +136,5 @@ const authSlice = createSlice({
   }
 });
 
-export const { logout, clearError } = authSlice.actions;
+export const { clearError } = authSlice.actions;
 export default authSlice.reducer;

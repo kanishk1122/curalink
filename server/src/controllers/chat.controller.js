@@ -10,6 +10,8 @@ const activeStopSignals = new Map();
  */
 const sendMessage = async (req, res) => {
   const { chatId, message, context } = req.body;
+  const userId = req.user?.id || null;
+  const sessionId = req.sessionId; // From sessionMiddleware
   
   try {
     let chat;
@@ -22,16 +24,21 @@ const sendMessage = async (req, res) => {
       chat = await prisma.chat.create({
         data: { 
           title: context.disease || 'New Medical Inquiry',
-          userId: req.user?.id || null
+          userId,
+          sessionId
         }
       });
     }
 
     if (!chat) return res.status(404).json({ error: 'Chat not found' });
     
-    // Authorization Check
-    if (chat.userId && chat.userId !== req.user?.id) {
-      return res.status(403).json({ error: 'Forbidden' });
+    // STRICT TENANT ISOLATION CHECK
+    // 1. If chat is owned by a user, only that user can access.
+    // 2. If chat is a guest chat (userId is null), only the creator session can access.
+    const isOwner = chat.userId ? (chat.userId === userId) : (chat.sessionId === sessionId);
+    
+    if (!isOwner) {
+      return res.status(403).json({ error: 'You do not have permission to access this research session.' });
     }
     
     // Clear any previous stop signal for this chat
@@ -42,6 +49,7 @@ const sendMessage = async (req, res) => {
       data: { chatId: chat.id, role: 'user', content: message }
     });
 
+    // ... [Rest of original sendMessage logic remains same]
     // 1. Expand Query
     req.io.emit('progress', { chatId: chat.id, message: 'Performing semantic feature extraction and agent routing...' });
     let expanded = await aiService.expandQuery(message, context);
@@ -64,10 +72,9 @@ const sendMessage = async (req, res) => {
     // 3. Search Resilience: Fallback if results are empty
     if (allResults.length === 0) {
       req.io.emit('progress', { chatId: chat.id, message: 'Precision search returned no direct papers. Retrying with high-recall keywords...' });
-      
-      const fallbackKeywords = expanded.keywords.slice(0, 3).join(' '); // Simple keywords
+      const fallbackKeywords = expanded.keywords.slice(0, 3).join(' ');
       [pubmed, openalex] = await Promise.all([
-        researchService.fetchPubMed(fallbackKeywords, ''), // Broaden to global if local fails
+        researchService.fetchPubMed(fallbackKeywords, ''),
         researchService.fetchOpenAlex(fallbackKeywords, '')
       ]);
       allResults = [...pubmed, ...openalex, ...trials];
@@ -77,18 +84,15 @@ const sendMessage = async (req, res) => {
 
     const topResults = researchService.rankResults(allResults, expanded.location, 8);
     
-    // 4. Stream AI Reasoning with Abort Handling
+    // 4. Stream AI Reasoning
     const history = chat.messages || [];
     let fullResponse = '';
     let stopped = false;
     
     const steamGenerator = aiService.reasonOverResearchStream(message, topResults, history, expanded.location);
     
-    // Listen for client-side stop signal via a specific socket ID if available, or simpler global map
-    // For this implementation, we use a simple shared map that the socket handler can toggle.
     try {
       for await (const chunk of steamGenerator) {
-        // CHECK STOP SIGNAL
         if (activeStopSignals.has(chat.id)) {
           stopped = true;
           req.io.emit('progress', { chatId: chat.id, message: 'Research synthesis paused by user.' });
@@ -101,11 +105,10 @@ const sendMessage = async (req, res) => {
     } catch (streamError) {
       console.error('Stream processing error:', streamError);
     } finally {
-      // CLEAR UI STATE REGARDLESS OF SUCCESS/TRUNCATION
       req.io.emit('chat:done', { chatId: chat.id });
     }
 
-    // 5. Data Integrity: Save Message even if stopped/interrupted
+    // 5. Data Integrity: Save Message
     if (fullResponse.trim().length > 0) {
       const savedMessage = await prisma.message.create({
         data: {
@@ -114,22 +117,15 @@ const sendMessage = async (req, res) => {
           content: fullResponse + (stopped ? ' [Paused by User]' : ''),
           sources: {
             create: topResults.map(r => ({
-              title: r.title,
-              url: r.url,
-              authors: r.authors,
-              year: r.year,
-              platform: r.platform,
-              snippet: r.snippet,
-              type: r.type,
-              status: r.status,
-              location: r.location
+              title: r.title, url: r.url, authors: r.authors, year: r.year,
+              platform: r.platform, snippet: r.snippet, type: r.type,
+              status: r.status, location: r.location
             }))
           }
         },
         include: { sources: true }
       });
 
-      // Cleanup
       activeStopSignals.delete(chat.id);
 
       return res.json({
@@ -150,7 +146,6 @@ const sendMessage = async (req, res) => {
 
 /**
  * Global Socket Handler Integration
- * Call this from index.js to enable the stop signal
  */
 const setupSocketHandlers = (io) => {
   io.on('connection', (socket) => {
@@ -163,6 +158,9 @@ const setupSocketHandlers = (io) => {
 
 const getChatHistory = async (req, res) => {
   const { id } = req.params;
+  const userId = req.user?.id || null;
+  const sessionId = req.sessionId;
+
   try {
     const chat = await prisma.chat.findUnique({
       where: { id },
@@ -175,6 +173,13 @@ const getChatHistory = async (req, res) => {
     });
 
     if (!chat) return res.status(404).json({ error: 'Chat not found' });
+
+    // STRICT OWNER VALIDATION
+    const isOwner = chat.userId ? (chat.userId === userId) : (chat.sessionId === sessionId);
+    if (!isOwner) {
+      return res.status(403).json({ error: 'Not authorized to view this research history' });
+    }
+
     res.json(chat);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch history' });
@@ -184,8 +189,13 @@ const getChatHistory = async (req, res) => {
 const listChats = async (req, res) => {
   try {
     const userId = req.user?.id || null;
+    const sessionId = req.sessionId;
+
+    // Filter strictly by the current user session
+    // If logged in: only show user chats.
+    // If guest: only show chats matching the current guest sessionId.
     const chats = await prisma.chat.findMany({
-      where: { userId },
+      where: userId ? { userId } : { userId: null, sessionId },
       orderBy: { updatedAt: 'desc' }
     });
     res.json(chats);
@@ -195,13 +205,15 @@ const listChats = async (req, res) => {
 };
 
 /**
- * Fetch the most recent context (Disease/Location) for the user
+ * Fetch the most recent context (Disease/Location) for the user session
  */
 const getRecentContext = async (req, res) => {
   try {
     const userId = req.user?.id || null;
+    const sessionId = req.sessionId;
+
     const recentChat = await prisma.chat.findFirst({
-      where: { userId },
+      where: userId ? { userId } : { userId: null, sessionId },
       orderBy: { updatedAt: 'desc' },
       include: {
         messages: {

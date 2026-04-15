@@ -1,27 +1,27 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
+import { logout } from './authSlice';
 
 const API_BASE = 'http://localhost:5000/api';
 
-// Config for authorized requests
-const getAuthHeader = () => {
-  const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+const api = axios.create({
+  baseURL: API_BASE,
+  withCredentials: true
+});
 
 // Async Thunks
 export const fetchChats = createAsyncThunk('chat/fetchChats', async () => {
-  const response = await axios.get(`${API_BASE}/chat`, { headers: getAuthHeader() });
+  const response = await api.get(`/chat`);
   return response.data;
 });
 
 export const fetchContext = createAsyncThunk('chat/fetchContext', async () => {
-  const response = await axios.get(`${API_BASE}/chat/context`, { headers: getAuthHeader() });
+  const response = await api.get(`/chat/context`);
   return response.data;
 });
 
 export const loadChat = createAsyncThunk('chat/loadChat', async (id) => {
-  const response = await axios.get(`${API_BASE}/chat/${id}`, { headers: getAuthHeader() });
+  const response = await api.get(`/chat/${id}`);
   return { id, data: response.data };
 });
 
@@ -29,11 +29,11 @@ export const sendMessage = createAsyncThunk(
   'chat/sendMessage',
   async ({ chatId, message, context }, { rejectWithValue }) => {
     try {
-      const response = await axios.post(`${API_BASE}/chat/message`, {
+      const response = await api.post(`/chat/message`, {
         chatId,
         message,
         context
-      }, { headers: getAuthHeader() });
+      });
       return response.data;
     } catch (err) {
       return rejectWithValue(err.response.data);
@@ -41,11 +41,12 @@ export const sendMessage = createAsyncThunk(
   }
 );
 
+// Claim Chats now purely relies on the backend session cookie
 export const claimChats = createAsyncThunk(
   'chat/claimChats',
-  async (chatIds, { rejectWithValue }) => {
+  async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.post(`${API_BASE}/auth/claim`, { chatIds }, { headers: getAuthHeader() });
+      const response = await api.post(`/auth/claim`);
       return response.data;
     } catch (err) {
       return rejectWithValue(err.response.data);
@@ -60,11 +61,11 @@ const initialState = {
   disease: '',
   location: '',
   loading: false,
+  isStreaming: false, // NEW: Tracks live synthesis
   progress: [],
   showModal: false,
   sidebarOpen: true,
   streamingChatId: null,
-  guestChatIds: JSON.parse(sessionStorage.getItem('guestChatIds') || '[]'),
   error: null
 };
 
@@ -94,11 +95,6 @@ const chatSlice = createSlice({
       state.messages = [];
     },
     addProgress: (state, action) => {
-      // For new chats, adopt the ID as soon as research starts
-      if (!state.activeChatId && action.payload.chatId) {
-        state.activeChatId = action.payload.chatId;
-      }
-      // Only show progress if it matches the current active chat
       if (action.payload.chatId === state.activeChatId) {
         state.progress = [...state.progress.slice(-2), action.payload];
       }
@@ -111,123 +107,100 @@ const chatSlice = createSlice({
       state.showModal = true;
     },
     addLocalMessage: (state, action) => {
-      state.messages.push(action.payload);
+      state.messages.push({ ...action.payload, id: Date.now().toString() });
     },
     appendStreamChunk: (state, action) => {
       const { chatId, chunk } = action.payload;
+      state.isStreaming = true; // Actively streaming
       
-      // For new chats, ensure we are tracking the ID
-      if (!state.activeChatId && chatId) {
-        state.activeChatId = chatId;
-      }
-
+      if (!state.activeChatId && chatId) state.activeChatId = chatId;
       if (chatId === state.activeChatId) {
         const lastMsg = state.messages[state.messages.length - 1];
         if (lastMsg && lastMsg.role === 'assistant') {
           lastMsg.content += chunk;
         } else {
-          state.messages.push({ role: 'assistant', content: chunk });
+          state.messages.push({ 
+            id: 'streaming-asst', 
+            role: 'assistant', 
+            content: chunk 
+          });
         }
       }
     },
     completeStreaming: (state) => {
       state.loading = false;
+      state.isStreaming = false; // Eagerly unlock UI
       state.progress = [];
       state.streamingChatId = null;
     }
   },
   extraReducers: (builder) => {
     builder
-      // Fetch Chats
-      .addCase(fetchChats.fulfilled, (state, action) => {
-        state.chats = action.payload;
+      .addCase('auth/logout/fulfilled', (state) => {
+        state.messages = [];
+        state.chats = [];
+        state.activeChatId = null;
+        state.disease = '';
+        state.location = '';
+        state.loading = false;
+        state.isStreaming = false;
+        state.progress = [];
       })
-      // Fetch Context
-      .addCase(fetchContext.fulfilled, (state, action) => {
-        if (action.payload.disease) {
-          state.disease = action.payload.disease;
-          state.location = action.payload.location;
-          state.showModal = false;
-        } else {
-          state.showModal = true;
-        }
-      })
-      .addCase(fetchContext.rejected, (state) => {
-        state.showModal = true;
-      })
-      // Load Chat
       .addCase(loadChat.pending, (state) => {
         state.loading = true;
-        state.messages = [];
-        state.progress = []; // Reset progress for the new chat
       })
       .addCase(loadChat.fulfilled, (state, action) => {
         state.loading = false;
         state.activeChatId = action.payload.id;
         state.messages = action.payload.data.messages || [];
-        if (action.payload.data.title && action.payload.data.title !== 'New Medical Inquiry') {
-          state.disease = action.payload.data.title;
+        state.disease = action.payload.data.title || '';
+        const lastAsstMsg = [...state.messages].reverse().find(m => m.role === 'assistant');
+        if (lastAsstMsg && lastAsstMsg.sources) {
+           const locSource = lastAsstMsg.sources.find(s => s.location);
+           if (locSource) state.location = locSource.location;
         }
       })
-      // Send Message
+      .addCase(fetchChats.fulfilled, (state, action) => {
+        state.chats = action.payload;
+      })
+      .addCase(fetchContext.fulfilled, (state, action) => {
+        state.disease = action.payload.disease;
+        state.location = action.payload.location;
+      })
       .addCase(sendMessage.pending, (state) => {
         state.loading = true;
+        state.progress = [];
       })
       .addCase(sendMessage.fulfilled, (state, action) => {
         state.loading = false;
+        state.isStreaming = false; // Cleanup if not already done by socket
         state.progress = [];
-        state.streamingChatId = null;
-
         const { chatId } = action.payload;
-        
-        // Track as guest chat if not logged in
-        const token = localStorage.getItem('token');
-        if (!token && !state.guestChatIds.includes(chatId)) {
-          state.guestChatIds.push(chatId);
-          sessionStorage.setItem('guestChatIds', JSON.stringify(state.guestChatIds));
-        }
-        
-        // Finalize the message with sources if we are in the correct chat
         if (chatId === state.activeChatId) {
           const lastMsg = state.messages[state.messages.length - 1];
           if (lastMsg && lastMsg.role === 'assistant') {
             lastMsg.sources = action.payload.sources;
           }
         }
-        
-        if (!state.activeChatId) {
-          state.activeChatId = chatId;
-        }
+        if (!state.activeChatId) state.activeChatId = chatId;
       })
-      // Claim Chats
-      .addCase(claimChats.fulfilled, (state) => {
-        state.guestChatIds = [];
-        sessionStorage.removeItem('guestChatIds');
-      })
-      .addCase(sendMessage.rejected, (state, action) => {
+      .addCase(sendMessage.rejected, (state) => {
         state.loading = false;
+        state.isStreaming = false;
         state.progress = [];
         state.messages.push({
+          id: 'error-' + Date.now(),
           role: 'assistant',
-          content: "I'm sorry, I'm having trouble connecting to my research databases right now."
+          content: "I'm sorry, I encountered an error during synthesis."
         });
       });
   }
 });
 
 export const { 
-  setDisease, 
-  setLocation, 
-  setShowModal, 
-  setSidebarOpen,
-  toggleSidebar,
-  setActiveChat, 
-  clearMessages, 
-  addProgress, 
-  resetResearch,
-  addLocalMessage,
-  appendStreamChunk,
-  completeStreaming
+  setDisease, setLocation, setShowModal, setSidebarOpen, toggleSidebar,
+  setActiveChat, clearMessages, addProgress, resetResearch,
+  addLocalMessage, appendStreamChunk, completeStreaming
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

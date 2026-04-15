@@ -21,9 +21,13 @@ model Chat {
   title     String
   userId    String?
   user      User?     @relation(fields: [userId], references: [id])
+  sessionId String?   // For guest isolation
   messages  Message[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  @@index([sessionId])
+  @@index([userId])
 }
 
 model Message {

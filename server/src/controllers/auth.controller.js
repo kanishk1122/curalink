@@ -5,6 +5,16 @@ const { OAuth2Client } = require('google-auth-library');
 
 const client = new OAuth2Client(process.env.GOOGLE_AUTH);
 
+// Helper to set cookie
+const setAuthCookie = (res, token) => {
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+};
+
 /**
  * Register a new user
  */
@@ -20,7 +30,9 @@ const register = async (req, res) => {
     });
 
     const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: { id: user.id, email: user.email, name: user.name }, token });
+    setAuthCookie(res, token);
+    
+    res.json({ user: { id: user.id, email: user.email, name: user.name } });
   } catch (error) {
     res.status(500).json({ error: 'Registration failed' });
   }
@@ -39,7 +51,9 @@ const login = async (req, res) => {
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: { id: user.id, email: user.email, name: user.name }, token });
+    setAuthCookie(res, token);
+    
+    res.json({ user: { id: user.id, email: user.email, name: user.name } });
   } catch (error) {
     res.status(500).json({ error: 'Login failed' });
   }
@@ -47,22 +61,32 @@ const login = async (req, res) => {
 
 /**
  * Claim guest chats for an authenticated user
+ * Automatically claims any chats tied to the current browser's sessionId.
  */
 const claimChats = async (req, res) => {
-  const { chatIds } = req.body; // Array of UUIDs
   const userId = req.user.id;
+  const sessionId = req.sessionId;
+
+  if (!sessionId) {
+    return res.json({ success: true, message: 'No session to claim' });
+  }
 
   try {
-    await prisma.chat.updateMany({
+    const updateResult = await prisma.chat.updateMany({
       where: {
-        id: { in: chatIds },
+        sessionId,
         userId: null // Only claim orphan chats
       },
       data: { userId }
     });
-    res.json({ success: true, message: 'Chats claimed successfully' });
+
+    res.json({ 
+      success: true, 
+      message: `${updateResult.count} research sessions claimed successfully` 
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to claim chats' });
+    console.error('Claim error:', error);
+    res.status(500).json({ error: 'Failed to claim research sessions' });
   }
 };
 
@@ -101,15 +125,16 @@ const googleLogin = async (req, res) => {
         data: {
           email,
           name,
-          password: null // Google users don't have a local password
+          password: null
         }
       });
     }
 
     const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    setAuthCookie(res, token);
+
     res.json({ 
-      user: { id: user.id, email: user.email, name: user.name, picture }, 
-      token 
+      user: { id: user.id, email: user.email, name: user.name, picture }
     });
   } catch (error) {
     console.error('Google Auth Error:', error);
@@ -117,10 +142,32 @@ const googleLogin = async (req, res) => {
   }
 };
 
+/**
+ * Logout user - clear cookies and session
+ */
+const logout = (req, res) => {
+  // Clear the auth token
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+  
+  // Also rotate the sessionId for total history isolation
+  res.clearCookie('curalink_sid', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+
+  res.json({ success: true, message: 'Logged out successfully' });
+};
+
 module.exports = {
   register,
   login,
   claimChats,
   getProfile,
-  googleLogin
+  googleLogin,
+  logout
 };

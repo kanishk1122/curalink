@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -11,16 +12,26 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: 'http://localhost:5173',
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// MIDDLEWARES
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
+
+// SESSION ISOLATION (Assigned to all visitors)
+const sessionMiddleware = require('./middlewares/session.middleware');
+app.use(sessionMiddleware);
 
 // Pass io to routes
 app.use((req, res, next) => {
