@@ -154,7 +154,7 @@ const MessageItem = React.memo(({ msg }) => {
 });
 
 /* ─── Sidebar chat item ─── */
-const ChatItem = React.memo(({ chat, active, onClick }) => (
+const ChatItem = React.memo(({ chat, active, streaming, onClick }) => (
   <motion.button
     onClick={onClick}
     whileHover={{ x: 3 }}
@@ -168,9 +168,12 @@ const ChatItem = React.memo(({ chat, active, onClick }) => (
       <Info size={14} />
     </motion.div>
     <div className="flex-1 min-w-0">
-      <span className={`block truncate text-sm font-semibold ${active ? 'text-blue-900' : 'text-slate-600'}`}>
-        {chat.title}
-      </span>
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className={`block truncate text-sm font-semibold ${active ? 'text-blue-900' : 'text-slate-600'}`}>
+          {chat.title}
+        </span>
+        {streaming && <PulseDot />}
+      </div>
       <span className="text-[10px] text-slate-400 font-medium">
         {new Date(chat.createdAt).toLocaleDateString()}
       </span>
@@ -204,7 +207,10 @@ const EmptyState = React.memo(({ disease, onSuggestion }) => (
 /* ─── Main App ─── */
 export default function App() {
   const dispatch = useDispatch();
-  const { messages, chats, activeChatId, disease, location, loading, isStreaming, progress, showModal, sidebarOpen } = useSelector(state => state.chat);
+  const { 
+    messages, chats, activeChatId, disease, location, 
+    loading, isStreaming, activeStreamIds, processingChatIds, progress, showModal, sidebarOpen 
+  } = useSelector(state => state.chat);
   const { user, isAuthenticated, loading: authLoading } = useSelector(state => state.auth);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -226,8 +232,10 @@ export default function App() {
     socket.on('chat:chunk', ({ chatId, chunk }) => {
       dispatch(appendStreamChunk({ chatId, chunk }));
     });
-    socket.on('chat:done', () => {
-      dispatch(completeStreaming());
+    socket.on('chat:done', (data) => {
+      dispatch(completeStreaming(data));
+      // Refresh chats list to get the finalized title/message from DB
+      dispatch(fetchChats());
     });
     socket.on('progress', (data) => {
       dispatch(addProgress(data));
@@ -327,7 +335,13 @@ export default function App() {
                 <History size={11} /> Recent History
               </p>
               {chats.map((chat, i) => (
-                <ChatItem key={chat.id} chat={chat} active={activeChatId === chat.id} onClick={() => dispatch(loadChat(chat.id))} />
+                <ChatItem 
+                  key={chat.id} 
+                  chat={chat} 
+                  active={activeChatId === chat.id} 
+                  streaming={activeStreamIds.includes(chat.id)}
+                  onClick={() => dispatch(loadChat(chat.id))} 
+                />
               ))}
             </div>
 
@@ -344,7 +358,7 @@ export default function App() {
                     </div>
                     {isStreaming && <PulseDot />}
                   </div>
-                  <button onClick={() => dispatch(logout())} className="w-full py-2.5 text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest border border-dashed border-slate-200 rounded-xl">
+                  <button onClick={() => dispatch(logout())} className="w-full py-2.5 cursor-pointer text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest border border-dashed border-slate-200 rounded-xl">
                     Logout Session
                   </button>
                 </div>
@@ -430,28 +444,35 @@ export default function App() {
         </AnimatePresence>
 
         <div className="absolute bottom-0 left-0 right-0 px-4 sm:px-10 pb-6 pt-10 bg-gradient-to-t from-white via-white/95 to-transparent">
-          <form onSubmit={handleSend} className="w-full lg:max-w-[70%] max-w-[95%] mx-auto flex items-end gap-2 bg-white border border-slate-200 p-2 rounded-2xl shadow-lg shadow-slate-100/80 focus-within:border-blue-300">
-            <textarea
-              ref={inputRef}
-              rows={1}
-              value={input}
-              onChange={e => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`; }}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
-              placeholder={disease ? `Ask about ${disease}…` : 'Set a condition first…'}
-              className="flex-1 bg-transparent border-none focus:ring-0 text-[15px] font-medium px-3 py-2.5 placeholder:text-slate-300 text-slate-800 min-w-0 resize-none max-h-[120px] outline-none"
-            />
-            {(loading || isStreaming) ? (
-              <AnimatedButton type="button" onClick={handleStop} className="mb-1 px-5 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition-colors flex items-center gap-2">
-                <Square size={14} fill="white" />
-                <span className="hidden sm:inline">Stop Reasoning</span>
-              </AnimatedButton>
-            ) : (
-              <AnimatedButton type="submit" disabled={!input.trim() || !disease} className="mb-1 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-30 transition-colors flex items-center gap-2">
-                <Sparkles size={15} />
-                <span className="hidden sm:inline">Search Research</span>
-              </AnimatedButton>
-            )}
-          </form>
+          {/* Atomic Concurrency Lock logic */}
+          {(() => {
+            const isChatBusy = isStreaming || processingChatIds.includes(activeChatId) || (loading && !activeChatId);
+            return (
+              <form onSubmit={handleSend} className="w-full lg:max-w-[70%] max-w-[95%] mx-auto flex items-end gap-2 bg-white border border-slate-200 p-2 rounded-2xl shadow-lg shadow-slate-100/80 focus-within:border-blue-300">
+                <textarea
+                  ref={inputRef}
+                  rows={1}
+                  value={input}
+                  disabled={isChatBusy}
+                  onChange={e => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`; }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
+                  placeholder={isChatBusy ? "Synthesizing research..." : (disease ? `Ask about ${disease}…` : 'Set a condition first…')}
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-[15px] font-medium px-3 py-2.5 placeholder:text-slate-300 text-slate-800 min-w-0 resize-none max-h-[120px] outline-none disabled:opacity-50"
+                />
+                {isChatBusy ? (
+                  <AnimatedButton type="button" onClick={handleStop} className="mb-1 px-5 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition-colors flex items-center gap-2">
+                    <Square size={14} fill="white" />
+                    <span className="hidden sm:inline">Stop Reasoning</span>
+                  </AnimatedButton>
+                ) : (
+                  <AnimatedButton type="submit" disabled={!input.trim() || !disease} className="mb-1 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-30 transition-colors flex items-center gap-2">
+                    <Sparkles size={15} />
+                    <span className="hidden sm:inline">Search Research</span>
+                  </AnimatedButton>
+                )}
+              </form>
+            );
+          })()}
           <p className="text-[10px] text-center text-slate-300 mt-3 font-bold uppercase tracking-widest">Research-Backed Insights • Empathetic Care</p>
         </div>
       </main>

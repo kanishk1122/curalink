@@ -61,7 +61,10 @@ const initialState = {
   disease: '',
   location: '',
   loading: false,
-  isStreaming: false, // NEW: Tracks live synthesis
+  isStreaming: false, 
+  streamingBuffers: {}, 
+  activeStreamIds: [], 
+  processingChatIds: [], // NEW: Tracks in-flight HTTP requests per chat
   progress: [],
   showModal: false,
   sidebarOpen: true,
@@ -111,27 +114,47 @@ const chatSlice = createSlice({
     },
     appendStreamChunk: (state, action) => {
       const { chatId, chunk } = action.payload;
-      state.isStreaming = true; // Actively streaming
       
-      if (!state.activeChatId && chatId) state.activeChatId = chatId;
+      if (!state.streamingBuffers[chatId]) {
+        state.streamingBuffers[chatId] = "";
+        if (!state.activeStreamIds.includes(chatId)) {
+          state.activeStreamIds.push(chatId);
+        }
+      }
+      state.streamingBuffers[chatId] += chunk;
+      
       if (chatId === state.activeChatId) {
+        state.isStreaming = true;
         const lastMsg = state.messages[state.messages.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant') {
+        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.id === 'streaming-asst-' + chatId) {
           lastMsg.content += chunk;
         } else {
           state.messages.push({ 
-            id: 'streaming-asst', 
+            id: 'streaming-asst-' + chatId, 
             role: 'assistant', 
             content: chunk 
           });
         }
       }
     },
-    completeStreaming: (state) => {
-      state.loading = false;
-      state.isStreaming = false; // Eagerly unlock UI
-      state.progress = [];
-      state.streamingChatId = null;
+    completeStreaming: (state, action) => {
+      const chatId = action.payload?.chatId;
+      
+      if (chatId) {
+        delete state.streamingBuffers[chatId];
+        state.activeStreamIds = state.activeStreamIds.filter(id => id !== chatId);
+        state.processingChatIds = state.processingChatIds.filter(id => id !== chatId); // Final safety cleanup
+        
+        if (chatId === state.activeChatId) {
+          state.isStreaming = false;
+          state.loading = false;
+          state.progress = [];
+          state.streamingChatId = null;
+        }
+      } else {
+        state.isStreaming = false;
+        state.loading = false;
+      }
     }
   },
   extraReducers: (builder) => {
@@ -144,16 +167,38 @@ const chatSlice = createSlice({
         state.location = '';
         state.loading = false;
         state.isStreaming = false;
+        state.streamingBuffers = {};
+        state.activeStreamIds = [];
+        state.processingChatIds = [];
         state.progress = [];
       })
-      .addCase(loadChat.pending, (state) => {
+      .addCase(loadChat.pending, (state, action) => {
         state.loading = true;
+        const targetChatId = action.meta.arg;
+        state.activeChatId = targetChatId;
+        state.isStreaming = !!state.streamingBuffers[targetChatId] || state.activeStreamIds.includes(targetChatId);
       })
       .addCase(loadChat.fulfilled, (state, action) => {
         state.loading = false;
-        state.activeChatId = action.payload.id;
-        state.messages = action.payload.data.messages || [];
+        const chatId = action.payload.id;
+        state.activeChatId = chatId;
+        
+        let messages = action.payload.data.messages || [];
+        
+        if (state.streamingBuffers[chatId]) {
+          messages.push({
+            id: 'streaming-asst-' + chatId,
+            role: 'assistant',
+            content: state.streamingBuffers[chatId]
+          });
+          state.isStreaming = true;
+        } else {
+          state.isStreaming = false;
+        }
+
+        state.messages = messages;
         state.disease = action.payload.data.title || '';
+        
         const lastAsstMsg = [...state.messages].reverse().find(m => m.role === 'assistant');
         if (lastAsstMsg && lastAsstMsg.sources) {
            const locSource = lastAsstMsg.sources.find(s => s.location);
@@ -167,15 +212,20 @@ const chatSlice = createSlice({
         state.disease = action.payload.disease;
         state.location = action.payload.location;
       })
-      .addCase(sendMessage.pending, (state) => {
+      .addCase(sendMessage.pending, (state, action) => {
         state.loading = true;
+        const currentChatId = action.meta.arg.chatId;
+        if (currentChatId && !state.processingChatIds.includes(currentChatId)) {
+          state.processingChatIds.push(currentChatId);
+        }
         state.progress = [];
       })
       .addCase(sendMessage.fulfilled, (state, action) => {
         state.loading = false;
-        state.isStreaming = false; // Cleanup if not already done by socket
-        state.progress = [];
         const { chatId } = action.payload;
+        state.processingChatIds = state.processingChatIds.filter(id => id !== chatId);
+        
+        state.progress = [];
         if (chatId === state.activeChatId) {
           const lastMsg = state.messages[state.messages.length - 1];
           if (lastMsg && lastMsg.role === 'assistant') {
@@ -184,8 +234,10 @@ const chatSlice = createSlice({
         }
         if (!state.activeChatId) state.activeChatId = chatId;
       })
-      .addCase(sendMessage.rejected, (state) => {
+      .addCase(sendMessage.rejected, (state, action) => {
         state.loading = false;
+        const currentChatId = action.meta.arg.chatId;
+        state.processingChatIds = state.processingChatIds.filter(id => id !== currentChatId);
         state.isStreaming = false;
         state.progress = [];
         state.messages.push({
