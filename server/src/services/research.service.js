@@ -23,7 +23,8 @@ class ResearchService {
     try {
       // Use the query as provided (expanded by AI). We no longer force 'AND (Location)' here.
       const searchUrl = `${this.pubmedBaseUrl}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${maxResults}&sort=pub+date&retmode=json${this.ncbiApiKey ? `&api_key=${this.ncbiApiKey}` : ''}`;
-      const searchResponse = await axios.get(searchUrl);
+      console.log(`[ResearchService] Fetching PubMed: ${searchUrl}`);
+      const searchResponse = await axios.get(searchUrl, { timeout: 10000 });
       const ids = searchResponse.data.esearchresult.idlist;
 
       if (!ids || ids.length === 0) {
@@ -49,7 +50,12 @@ class ResearchService {
         };
       });
     } catch (error) {
-      console.error('PubMed Fetch Error:', error.response?.data || error.message);
+      console.error('PubMed Fetch Error Structure:', {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status,
+        data: error.response?.data
+      });
       return [];
     }
   }
