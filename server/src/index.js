@@ -13,6 +13,26 @@ const { globalLimiter } = require('./middlewares/rate-limit.middleware');
 
 dotenv.config();
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://whale-app-a4lge.ondigitalocean.app'
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+};
+
 const app = express();
 console.log(`◇ Curalink System: ${Object.keys(process.env).filter(k => !['PATH', 'HOME', 'USER', 'PWD'].includes(k)).length} environment keys successfully active.`);
 
@@ -26,21 +46,14 @@ app.use(helmet());
 app.use('/api', globalLimiter);
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: 'http://localhost:5173',
-    methods: ['GET', 'POST'],
-    credentials: true
-  }
+  cors: corsOptions
 });
 
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5000;
 
 // MIDDLEWARES
-app.use(cors({
-  origin: 'http://localhost:5173',
-  credentials: true
-}));
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 

@@ -12,8 +12,8 @@ const sessionMiddleware = (req, res, next) => {
     // Set a long-lived, secure cookie for guest tracking
     res.cookie('curalink_sid', sid, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true, // Required for sameSite: 'none'
+      sameSite: 'none', 
       maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
     });
   }
