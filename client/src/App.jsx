@@ -16,6 +16,7 @@ import {
 } from './store/chatSlice';
 import { fetchProfile, logout } from './store/authSlice';
 import AuthModal from './components/AuthModal';
+import UploadModal from './components/UploadModal';
 
 const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
   withCredentials: true
@@ -225,6 +226,7 @@ export default function App() {
   const isChatBusy = isStreaming || processingChatIds.includes(activeChatId) || (loading && !activeChatId);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [input, setInput] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -233,7 +235,6 @@ export default function App() {
   const chatEndRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const inputRef = useRef(null);
-  const fileInputRef = useRef(null);
 
   const scrollToBottom = (behavior = 'smooth') => {
     chatEndRef.current?.scrollIntoView({ behavior });
@@ -322,10 +323,10 @@ export default function App() {
     }
   };
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
+  const handleFileUpload = async (file) => {
     if (!file) return;
 
+    // Size check is already in Modal, but double-guarding
     if (file.size > 5 * 1024 * 1024) {
       alert("File is too large. Please upload a report under 5MB.");
       return;
@@ -548,13 +549,6 @@ export default function App() {
           {(() => {
             return (
               <form onSubmit={handleSend} className="w-full lg:max-w-[70%] max-w-[95%] mx-auto flex items-end gap-2 bg-white border border-slate-200 p-2 rounded-2xl shadow-lg shadow-slate-100/80 focus-within:border-blue-300">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  accept=".pdf, .jpg, .jpeg, .png"
-                />
                 
                 <AnimatedButton 
                   type="button" 
@@ -562,7 +556,7 @@ export default function App() {
                     if (!isAuthenticated) {
                       setIsAuthModalOpen(true);
                     } else {
-                      fileInputRef.current?.click();
+                      setIsUploadModalOpen(true);
                     }
                   }}
                   disabled={isChatBusy || isUploading}
@@ -597,17 +591,23 @@ export default function App() {
                       </div>
                     </motion.div>
                   )}
-                  <textarea
-                    ref={inputRef}
-                    rows={1}
-                    value={input}
-                    disabled={isChatBusy}
-                    onChange={e => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`; }}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
-                    placeholder={isChatBusy ? "Synthesizing research..." : (disease ? `Ask about ${disease}…` : 'Set a condition first…')}
-                    className="w-full bg-transparent border-none focus:ring-0 text-[15px] font-medium px-3 py-2.5 placeholder:text-slate-300 text-slate-800 min-w-0 resize-none max-h-[120px] outline-none disabled:opacity-50"
-                  />
-                </div>
+                    <textarea
+                      ref={inputRef}
+                      rows={1}
+                      value={input}
+                      maxLength={2000}
+                      disabled={isChatBusy}
+                      onChange={e => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`; }}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
+                      placeholder={isChatBusy ? "Synthesizing research..." : (disease ? `Ask about ${disease}…` : 'Set a condition first…')}
+                      className="w-full bg-transparent border-none focus:ring-0 text-[15px] font-medium px-3 py-2.5 placeholder:text-slate-300 text-slate-800 min-w-0 resize-none max-h-[120px] outline-none disabled:opacity-50"
+                    />
+                    {input.length > 1500 && (
+                      <div className="absolute -top-6 right-2 text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                        {input.length} / 2000
+                      </div>
+                    )}
+                  </div>
                 {isChatBusy ? (
                   <AnimatedButton type="button" onClick={handleStop} className="mb-1 px-5 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition-colors flex items-center gap-2">
                     <Square size={14} fill="white" />
@@ -635,6 +635,11 @@ export default function App() {
       </main>
 
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <UploadModal 
+        isOpen={isUploadModalOpen} 
+        onClose={() => setIsUploadModalOpen(false)} 
+        onUpload={handleFileUpload} 
+      />
       <AnimatePresence>{showModal && <FocusModal dispatch={dispatch} disease={disease} location={location} />}</AnimatePresence>
     </div>
   );

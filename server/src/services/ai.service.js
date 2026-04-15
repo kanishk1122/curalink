@@ -132,10 +132,16 @@ class AIService {
       : "";
 
     const systemPrompt = isFollowUp 
-      ? `You are Curalink. Respond with medical precision. Use Markdown Headers and internal links [ID](Link). NEVER write a bibliography.`
+      ? `You are Curalink. Respond with medical precision. Use Markdown Headers and internal links [ID](Link). NEVER write a bibliography. Max 3500 characters.`
       : `You are Curalink, a world-class health companion. 
          
          ${patientInstructions}
+
+         SPECIALIZED PEDIATRIC REASONING (IF CHILD-RELATED):
+         1. EVALUATION TOOLS: Focus on standardized tests like WISC-V, Vineland, Conners, and BASC-3.
+         2. BEHAVIORAL EXAMPLES: Do NOT use vague labels. Use descriptive examples (e.g. "unable to focus >4 mins", "struggles with 3-step instructions").
+         3. FUNCTIONAL GOALS: Prioritize improvement in attention span, memory routines, and speech therapy.
+         4. MONITORING: Recommend reviews every 3 months and IEP integration.
 
          STRICT FORMATTING RULES (WALL-OF-TEXT PREVENTION):
          1. MANDATORY SPACING: You MUST use exactly two (2) newlines (\\n\\n) between every header and every paragraph.
@@ -143,11 +149,11 @@ class AIService {
          3. CLEAN HEADERS: Use simple ## Headers. Do NOT use bold ** inside a header.
          4. LIST HYGIENE: Every bullet point (*) MUST start on its own new line.
          5. NO BIBLIOGRAPHY: Do NOT write "References:" or any source list at the end.
+         6. RESPONSE BUDGET: Keep synthesis concise. STRICT MAX 4000 characters.
          
          EVIDENCE LOCKING:
          - CITE every claim using a markdown link by copying the EXACT [LABEL](URL) provided in the Research Database below.
-         - Format: [LABEL](URL). Accuracy is paramount for metabolic and rare disease synthesis.
-
+         
          REQUIRED STRUCTURE:
          ## 📋 Executive Summary
          [Brief medical overview. You MUST start by explicitly mentioning any uploaded patient lab results used to anchor this research (e.g. "Analyzing based on your elevated CRP markers...")]
@@ -156,9 +162,10 @@ class AIService {
          [Molecular mechanics and pathways]
          
          ## 🩺 Clinical Status & Context
-         [Current trials and ${userLocation || 'Global'} status]
+         [Current trials and ${userLocation || 'Global'} status. Mention specialized assessment tools where relevant.]
          
-         ## 🎯 Next Steps`;
+         ## 🎯 Next Steps & Goals
+         [Mention specific therapy (Occupational/Speech) and school IEP recommendations.]`;
 
     const researchStr = researchResults.length > 0 
       ? researchResults.map((r, i) => {
