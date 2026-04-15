@@ -1,10 +1,12 @@
 const axios = require('axios');
+const https = require('https');
 const dotenv = require('dotenv');
 
 dotenv.config();
 
 /**
  * Service to handle retrieval from PubMed, OpenAlex, and ClinicalTrials.gov
+ * HARDENED: Survival Kit for Cloud-based (DigitalOcean) retrieval.
  */
 class ResearchService {
   constructor() {
@@ -12,30 +14,67 @@ class ResearchService {
     this.openAlexBaseUrl = 'https://api.openalex.org/works';
     this.clinicalTrialsBaseUrl = 'https://clinicaltrials.gov/api/v2/studies';
     this.ncbiApiKey = process.env.NCBI_API_KEY;
+    
+    // Survival Kit: Keep-alive agent to optimize TLS handshakes in cloud environments
+    this.httpsAgent = new https.Agent({ 
+      keepAlive: true, 
+      maxSockets: 50,
+      timeout: 15000 
+    });
+
+    // Identity headers for medical authority
+    this.headers = {
+      'User-Agent': 'CuralinkHealthAssistant/2.0 (mailto:kansihk12soni@gmail.com; +https://curalink.ai)',
+      'Accept': 'application/json, text/plain, */*',
+      'Referer': 'https://curalink.ai'
+    };
+  }
+
+  /**
+   * Helper for Exponential Backoff Retries
+   */
+  async _retryRequest(fn, retries = 2, delay = 1500) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (retries <= 0 || (error.code !== 'ETIMEDOUT' && !error.message.includes('timeout'))) {
+        throw error;
+      }
+      console.log(`[ResearchService] Request failed, retrying in ${delay}ms... (${retries} retries left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return this._retryRequest(fn, retries - 1, delay * 2);
+    }
   }
 
   /**
    * Fetch publications from PubMed
-   * REFINED: Removed restrictive geographic filtering for academic sources.
-   * Academic research is better searched globally to ensure data depth.
    */
-  async fetchPubMed(query, location = '', maxResults = 100) {
+  async fetchPubMed(query, location = '', maxResults = 50) { // Reduced to 50 for cloud stability
+    const url = `${this.pubmedBaseUrl}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${maxResults}&sort=pub+date&retmode=json${this.ncbiApiKey ? `&api_key=${this.ncbiApiKey}` : ''}`;
+    
     try {
-      // Use the query as provided (expanded by AI). We no longer force 'AND (Location)' here.
-      const searchUrl = `${this.pubmedBaseUrl}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${maxResults}&sort=pub+date&retmode=json${this.ncbiApiKey ? `&api_key=${this.ncbiApiKey}` : ''}`;
-      console.log(`[ResearchService] Fetching PubMed: ${searchUrl}`);
-      const searchResponse = await axios.get(searchUrl, { timeout: 10000 });
-      const ids = searchResponse.data.esearchresult.idlist;
+      const searchResponse = await this._retryRequest(() => 
+        axios.get(url, { 
+          headers: this.headers, 
+          httpsAgent: this.httpsAgent,
+          timeout: 20000 // 20s for cloud survival
+        })
+      );
 
-      if (!ids || ids.length === 0) {
-        console.log(`[ResearchService] PubMed 0 results for: ${query}`);
-        return [];
-      }
+      const ids = searchResponse.data.esearchresult.idlist;
+      if (!ids || ids.length === 0) return [];
 
       const summaryUrl = `${this.pubmedBaseUrl}/esummary.fcgi?db=pubmed&id=${ids.join(',')}&retmode=json${this.ncbiApiKey ? `&api_key=${this.ncbiApiKey}` : ''}`;
-      const summaryResponse = await axios.get(summaryUrl);
-      const results = summaryResponse.data.result;
+      
+      const summaryResponse = await this._retryRequest(() => 
+        axios.get(summaryUrl, { 
+          headers: this.headers, 
+          httpsAgent: this.httpsAgent,
+          timeout: 20000 
+        })
+      );
 
+      const results = summaryResponse.data.result;
       return ids.map(id => {
         const item = results[id];
         return {
@@ -46,15 +85,15 @@ class ResearchService {
           url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
           snippet: item.fulljournalname,
           type: 'Publication',
-          location: '' // Global result, ranking engine will try to match affiliations later
+          location: ''
         };
       });
     } catch (error) {
-      console.error('PubMed Fetch Error Structure:', {
+      console.error('PubMed Restoration Failure:', {
         message: error.message,
         code: error.code,
         status: error.response?.status,
-        data: error.response?.data
+        query: query.slice(0, 50)
       });
       return [];
     }
@@ -62,13 +101,14 @@ class ResearchService {
 
   /**
    * Fetch publications from OpenAlex
-   * REFINED: Removed restrictive geographic filtering.
    */
-  async fetchOpenAlex(query, location = '', maxResults = 100) {
+  async fetchOpenAlex(query, location = '', maxResults = 50) {
     try {
       const url = `${this.openAlexBaseUrl}?search=${encodeURIComponent(query)}&per-page=${maxResults}&sort=relevance_score:desc`;
       const response = await axios.get(url, {
-        headers: { 'User-Agent': 'Curalink/1.0 (mailto:kansihk12soni@gmail.com)' }
+        headers: this.headers,
+        httpsAgent: this.httpsAgent,
+        timeout: 15000
       });
 
       return response.data.results.map(work => ({
@@ -88,7 +128,6 @@ class ResearchService {
 
   /**
    * Fetch Clinical Trials from ClinicalTrials.gov v2
-   * KEEPING: Geographic filtering is legitimate for clinical trials as they are location-bound.
    */
   async fetchClinicalTrials(condition, location = '', maxResults = 50) {
     try {
@@ -102,7 +141,12 @@ class ResearchService {
         url += `&query.locn=${encodeURIComponent(cleanLocation)}`;
       }
 
-      const response = await axios.get(url, { timeout: 8000 });
+      const response = await axios.get(url, { 
+        headers: this.headers,
+        httpsAgent: this.httpsAgent,
+        timeout: 15000 
+      });
+      
       const studies = response.data.studies || [];
 
       return studies.map(study => {
@@ -148,8 +192,6 @@ class ResearchService {
         if (res.status === 'RECRUITING') score += 15;
       }
       
-      // Location Affinity (Soft Match)
-      // Check title, snippet, and location field for matches to the user's focus area
       if (locLower && (
         (res.location && res.location.toLowerCase().includes(locLower)) ||
         (res.title && res.title.toLowerCase().includes(locLower)) ||
@@ -178,7 +220,6 @@ class ResearchService {
       return false;
     };
 
-    // Diversity slots: ensure at least up to 4 trials and 4 papers if available
     for (let i = 0; i < 4; i++) {
       if (trials[i]) tryAdd(trials[i]);
       if (papers[i]) tryAdd(papers[i]);
