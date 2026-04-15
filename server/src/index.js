@@ -14,6 +14,7 @@ const { globalLimiter } = require('./middlewares/rate-limit.middleware');
 dotenv.config();
 
 const app = express();
+console.log(`◇ Curalink System: ${Object.keys(process.env).filter(k => !['PATH', 'HOME', 'USER', 'PWD'].includes(k)).length} environment keys successfully active.`);
 
 // CLOUD PROXY TRUST (Required for DigitalOcean/Rate Limiting)
 app.set('trust proxy', 1);
