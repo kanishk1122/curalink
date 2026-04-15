@@ -5,10 +5,18 @@ const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
 const { PrismaClient } = require('@prisma/client');
+const helmet = require('helmet');
+const { globalLimiter } = require('./middlewares/rate-limit.middleware');
 
 dotenv.config();
 
 const app = express();
+
+// SECURITY HEADERS
+app.use(helmet());
+
+// GLOBAL RATE LIMIT
+app.use('/api', globalLimiter);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
