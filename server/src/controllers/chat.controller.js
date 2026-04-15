@@ -26,7 +26,15 @@ const sendMessage = async (req, res) => {
         data: { 
           title: context.disease || 'New Medical Inquiry',
           userId,
-          sessionId
+          sessionId,
+          metadata: context ? {
+            disease: context.disease,
+            location: context.location,
+            country: context.country,
+            countryCode: context.countryCode,
+            state: context.state,
+            stateCode: context.stateCode
+          } : null
         }
       });
     }

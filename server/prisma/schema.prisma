@@ -23,6 +23,7 @@ model Chat {
   user      User?     @relation(fields: [userId], references: [id])
   sessionId String?   // For guest isolation
   messages  Message[]
+  metadata  Json?     // For storing disease, country, and state focus points
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

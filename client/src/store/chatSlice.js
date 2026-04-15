@@ -72,6 +72,10 @@ const initialState = {
   activeChatId: null,
   disease: '',
   location: '',
+  country: '',
+  countryCode: '',
+  state: '',
+  stateCode: '',
   loading: false,
   isStreaming: false, 
   streamingBuffers: {}, 
@@ -95,6 +99,15 @@ const chatSlice = createSlice({
     },
     setLocation: (state, action) => {
       state.location = action.payload;
+    },
+    setFocus: (state, action) => {
+      const { disease, location, country, countryCode, state: sName, stateCode } = action.payload;
+      state.disease = disease ?? state.disease;
+      state.location = location ?? state.location;
+      state.country = country ?? state.country;
+      state.countryCode = countryCode ?? state.countryCode;
+      state.state = sName ?? state.state;
+      state.stateCode = stateCode ?? state.stateCode;
     },
     setShowModal: (state, action) => {
       state.showModal = action.payload;
@@ -256,13 +269,20 @@ const chatSlice = createSlice({
         }
 
         state.messages = messages;
-        state.disease = action.payload.data.title || '';
         state.progress = [];
-        
-        const lastAsstMsg = [...state.messages].reverse().find(m => m.role === 'assistant');
-        if (lastAsstMsg && lastAsstMsg.sources) {
-           const locSource = lastAsstMsg.sources.find(s => s.location);
-           if (locSource) state.location = locSource.location;
+
+        // ATOMIC RE-HYDRATION: Restore focused research context from Chat Metadata
+        const metadata = action.payload.data.metadata;
+        if (metadata) {
+          state.disease = metadata.disease || '';
+          state.location = metadata.location || '';
+          state.country = metadata.country || '';
+          state.countryCode = metadata.countryCode || '';
+          state.state = metadata.state || '';
+          state.stateCode = metadata.stateCode || '';
+        } else {
+          // Fallback to title if metadata is missing (legacy chats)
+          state.disease = action.payload.data.title || '';
         }
       })
       .addCase(fetchMoreHistory.pending, (state) => {
@@ -327,7 +347,7 @@ const chatSlice = createSlice({
 
 export const { 
   resetResearch, addProgress, appendStreamChunk, appendStreamBatch, completeStreaming, 
-  setShowModal, setDisease, setLocation, toggleSidebar, addLocalMessage, setActiveChat, clearMessages
+  setShowModal, setDisease, setLocation, setFocus, toggleSidebar, addLocalMessage, setActiveChat, clearMessages
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

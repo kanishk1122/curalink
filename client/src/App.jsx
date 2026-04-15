@@ -10,7 +10,7 @@ import { Routes, Route, useParams, useNavigate, useLocation } from 'react-router
 import { 
   fetchChats, fetchContext, loadChat, fetchMoreHistory, sendMessage, 
   resetResearch, addLocalMessage, appendStreamBatch, setShowModal,
-  setDisease, setLocation, toggleSidebar, claimChats, completeStreaming
+  setDisease, setLocation, setFocus, toggleSidebar, claimChats, completeStreaming
 } from './store/chatSlice';
 import { fetchProfile, logout } from './store/authSlice';
 
@@ -38,7 +38,7 @@ function MainApp() {
   const { 
     messages, chats, activeChatId, disease, location, 
     loading, isStreaming, activeStreamIds, processingChatIds, progress, showModal, sidebarOpen,
-    hasMoreHistory, isFetchingMore
+    hasMoreHistory, isFetchingMore, country, countryCode, state, stateCode
   } = useSelector(state => state.chat);
   const { user, isAuthenticated } = useSelector(state => state.auth);
   const isChatBusy = isStreaming || processingChatIds.includes(activeChatId) || (loading && !activeChatId);
@@ -175,7 +175,7 @@ function MainApp() {
     const result = await dispatch(sendMessage({
       chatId: activeChatId,
       message: messageText,
-      context: { disease, location, intent: 'Patient Inquiry' },
+      context: { disease, location, country, countryCode, state, stateCode, intent: 'Patient Inquiry' },
       patientData: analyzedData
     })).unwrap();
 
@@ -279,6 +279,7 @@ function MainApp() {
             setDisease={(d) => dispatch(setDisease(d))}
             location={location}
             setLocation={(l) => dispatch(setLocation(l))}
+            onSelectFocus={(metadata) => dispatch(setFocus(metadata))}
             onStart={() => dispatch(setShowModal(false))}
           />
         )}

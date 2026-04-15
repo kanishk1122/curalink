@@ -85,13 +85,14 @@ const LocationSelector = ({ label, placeholder, value, onSelect, items, isLoadin
 };
 
 const FocusModal = ({ 
-  isOpen, onClose, disease, setDisease, location, setLocation, onStart 
+  isOpen, onClose, disease, setDisease, location, setLocation, onStart, onSelectFocus
 }) => {
   const [countries, setCountries] = useState([]);
   const [states, setStates] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState(null); // {name, code}
   const [selectedState, setSelectedState] = useState(null); // {name, code}
   const [loading, setLoading] = useState({ countries: false, states: false });
+  const rehydrateStateRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -103,11 +104,38 @@ const FocusModal = ({
     }
   }, [isOpen]);
 
+  // Auto-rehydrate selection from existing location prop
+  useEffect(() => {
+    if (countries.length > 0 && location && !selectedCountry) {
+      const parts = location.split(', ');
+      const countryName = parts[parts.length - 1];
+      const stateName = parts.length > 1 ? parts[0] : null;
+
+      const foundCountry = countries.find(c => c.name === countryName);
+      if (foundCountry) {
+        setSelectedCountry(foundCountry);
+        if (stateName) rehydrateStateRef.current = stateName;
+      }
+    }
+  }, [countries, location, selectedCountry]);
+
+  // Handle state rehydration once states list arrives
+  useEffect(() => {
+    if (states.length > 0 && rehydrateStateRef.current) {
+      const foundState = states.find(s => s.name === rehydrateStateRef.current);
+      if (foundState) setSelectedState(foundState);
+      rehydrateStateRef.current = null;
+    }
+  }, [states]);
+
   useEffect(() => {
     if (selectedCountry) {
       setLoading(p => ({ ...p, states: true }));
-      setStates([]);
-      setSelectedState(null);
+      // Only clear states if we aren't currently rehydrating
+      if (!rehydrateStateRef.current) {
+        setStates([]);
+        setSelectedState(null);
+      }
       axios.get(`/api/location/${selectedCountry.code}/states`)
         .then(res => setStates(res.data))
         .catch(err => console.error('Failed to fetch states', err))
@@ -115,12 +143,20 @@ const FocusModal = ({
     }
   }, [selectedCountry]);
 
-  useEffect(() => {
-    if (selectedCountry) {
-      const locString = selectedState ? `${selectedState.name}, ${selectedCountry.name}` : selectedCountry.name;
-      setLocation(locString);
+  const handleStart = () => {
+    const locString = selectedState ? `${selectedState.name}, ${selectedCountry.name}` : selectedCountry.name;
+    if (onSelectFocus) {
+      onSelectFocus({
+        disease,
+        location: locString,
+        country: selectedCountry.name,
+        countryCode: selectedCountry.code,
+        state: selectedState?.name || '',
+        stateCode: selectedState?.code || ''
+      });
     }
-  }, [selectedCountry, selectedState, setLocation]);
+    onStart();
+  };
 
   if (!isOpen) return null;
 
@@ -142,7 +178,7 @@ const FocusModal = ({
         <div className="space-y-6">
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2.5">Condition or Disease</label>
-            <input value={disease} onChange={e => setDisease(e.target.value)} onKeyDown={e => e.key === 'Enter' && disease.trim() && onStart()} placeholder="e.g. Type 2 Diabetes" autoFocus className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-4 py-4 text-[15px] font-bold outline-none focus:border-blue-400 focus:bg-white transition-all placeholder:text-slate-300" />
+            <input value={disease} onChange={e => setDisease(e.target.value)} onKeyDown={e => e.key === 'Enter' && disease.trim() && handleStart()} placeholder="e.g. Type 2 Diabetes" autoFocus className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-4 py-4 text-[15px] font-bold outline-none focus:border-blue-400 focus:bg-white transition-all placeholder:text-slate-300" />
           </div>
           
           <div className="space-y-4">
@@ -170,7 +206,7 @@ const FocusModal = ({
 
           <AnimatedButton 
             disabled={!disease.trim() || !selectedCountry} 
-            onClick={onStart} 
+            onClick={handleStart} 
             className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 disabled:opacity-30 shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-3 mt-4"
           >
             <Sparkles size={16} />
