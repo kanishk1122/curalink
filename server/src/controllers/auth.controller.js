@@ -146,18 +146,18 @@ const googleLogin = async (req, res) => {
  * Logout user - clear cookies and session
  */
 const logout = (req, res) => {
-  // Clear the auth token
+  // Clear the auth token (Must match settings in setAuthCookie)
   res.clearCookie('token', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    secure: true,
+    sameSite: 'none'
   });
   
-  // Also rotate the sessionId for total history isolation
+  // Also rotate the sessionId for total history isolation (Must match sessionMiddleware)
   res.clearCookie('curalink_sid', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    secure: true,
+    sameSite: 'none'
   });
 
   res.json({ success: true, message: 'Logged out successfully' });
