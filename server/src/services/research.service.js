@@ -22,9 +22,9 @@ class ResearchService {
       timeout: 15000
     });
 
-    // Identity headers for medical authority
+    // Identity headers for medical authority (NCBI Recommended Format)
     this.headers = {
-      'User-Agent': 'CuralinkHealthAssistant/2.0 (mailto:kansihk12soni@gmail.com; +https://curalink.ai)',
+      'User-Agent': 'CuralinkBackend/1.0 (mailto:kanishk21soni@gmail.com)',
       'Accept': 'application/json, text/plain, */*',
       'Referer': 'https://curalink.ai'
     };
@@ -50,27 +50,37 @@ class ResearchService {
    * Fetch publications from PubMed
    */
   async fetchPubMed(query, location = '', maxResults = 50) { // Reduced to 50 for cloud stability
-    const url = `${this.pubmedBaseUrl}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${maxResults}&sort=pub+date&retmode=json${this.ncbiApiKey ? `&api_key=${this.ncbiApiKey}` : ''}`;
-
     try {
       const searchResponse = await this._retryRequest(() =>
-        axios.get(url, {
+        axios.get(`${this.pubmedBaseUrl}/esearch.fcgi`, {
+          params: {
+            db: 'pubmed',
+            term: query,
+            retmax: maxResults,
+            sort: 'pub+date',
+            retmode: 'json',
+            ...(this.ncbiApiKey && { api_key: this.ncbiApiKey })
+          },
           headers: this.headers,
           httpsAgent: this.httpsAgent,
-          timeout: 20000 // 20s for cloud survival
+          timeout: 15000 
         })
       );
 
       const ids = searchResponse.data.esearchresult.idlist;
       if (!ids || ids.length === 0) return [];
 
-      const summaryUrl = `${this.pubmedBaseUrl}/esummary.fcgi?db=pubmed&id=${ids.join(',')}&retmode=json${this.ncbiApiKey ? `&api_key=${this.ncbiApiKey}` : ''}`;
-
       const summaryResponse = await this._retryRequest(() =>
-        axios.get(summaryUrl, {
+        axios.get(`${this.pubmedBaseUrl}/esummary.fcgi`, {
+          params: {
+            db: 'pubmed',
+            id: ids.join(','),
+            retmode: 'json',
+            ...(this.ncbiApiKey && { api_key: this.ncbiApiKey })
+          },
           headers: this.headers,
           httpsAgent: this.httpsAgent,
-          timeout: 20000
+          timeout: 15000
         })
       );
 
