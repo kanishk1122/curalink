@@ -14,12 +14,12 @@ class ResearchService {
     this.openAlexBaseUrl = 'https://api.openalex.org/works';
     this.clinicalTrialsBaseUrl = 'https://clinicaltrials.gov/api/v2/studies';
     this.ncbiApiKey = process.env.NCBI_API_KEY;
-    
+
     // Survival Kit: Keep-alive agent to optimize TLS handshakes in cloud environments
-    this.httpsAgent = new https.Agent({ 
-      keepAlive: true, 
+    this.httpsAgent = new https.Agent({
+      keepAlive: true,
       maxSockets: 50,
-      timeout: 15000 
+      timeout: 15000
     });
 
     // Identity headers for medical authority
@@ -51,11 +51,11 @@ class ResearchService {
    */
   async fetchPubMed(query, location = '', maxResults = 50) { // Reduced to 50 for cloud stability
     const url = `${this.pubmedBaseUrl}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${maxResults}&sort=pub+date&retmode=json${this.ncbiApiKey ? `&api_key=${this.ncbiApiKey}` : ''}`;
-    
+
     try {
-      const searchResponse = await this._retryRequest(() => 
-        axios.get(url, { 
-          headers: this.headers, 
+      const searchResponse = await this._retryRequest(() =>
+        axios.get(url, {
+          headers: this.headers,
           httpsAgent: this.httpsAgent,
           timeout: 20000 // 20s for cloud survival
         })
@@ -65,12 +65,12 @@ class ResearchService {
       if (!ids || ids.length === 0) return [];
 
       const summaryUrl = `${this.pubmedBaseUrl}/esummary.fcgi?db=pubmed&id=${ids.join(',')}&retmode=json${this.ncbiApiKey ? `&api_key=${this.ncbiApiKey}` : ''}`;
-      
-      const summaryResponse = await this._retryRequest(() => 
-        axios.get(summaryUrl, { 
-          headers: this.headers, 
+
+      const summaryResponse = await this._retryRequest(() =>
+        axios.get(summaryUrl, {
+          headers: this.headers,
           httpsAgent: this.httpsAgent,
-          timeout: 20000 
+          timeout: 20000
         })
       );
 
@@ -136,17 +136,17 @@ class ResearchService {
 
       let url = `${this.clinicalTrialsBaseUrl}?query.cond=${encodeURIComponent(cleanCondition)}&pageSize=${maxResults}&countTotal=true&format=json`;
       const cleanLocation = location?.replace(/[^\w\s,]/gi, '').trim();
-      
+
       if (cleanLocation && !['global', 'remote', 'unknown', 'none', 'any', 'worldwide'].includes(cleanLocation.toLowerCase())) {
         url += `&query.locn=${encodeURIComponent(cleanLocation)}`;
       }
 
-      const response = await axios.get(url, { 
+      const response = await axios.get(url, {
         headers: this.headers,
         httpsAgent: this.httpsAgent,
-        timeout: 15000 
+        timeout: 15000
       });
-      
+
       const studies = response.data.studies || [];
 
       return studies.map(study => {
@@ -163,7 +163,7 @@ class ResearchService {
           url: `https://clinicaltrials.gov/study/${info.nctId}`,
           snippet: protocol.descriptionModule?.briefSummary || 'No summary available',
           type: 'Trial',
-          detailedLocation: locations 
+          detailedLocation: locations
         };
       });
     } catch (error) {
@@ -178,11 +178,11 @@ class ResearchService {
   rankResults(results, userLocation = '', topK = 8) {
     const currentYear = new Date().getFullYear();
     const locLower = userLocation?.toLowerCase().trim();
-    
+
     const scoredResults = results.map(res => {
       let score = 0;
       const year = parseInt(res.year) || 0;
-      
+
       if (year >= currentYear - 1) score += 50;
       else if (year >= currentYear - 3) score += 30;
       else if (year >= currentYear - 5) score += 10;
@@ -191,15 +191,15 @@ class ResearchService {
         score += 30;
         if (res.status === 'RECRUITING') score += 15;
       }
-      
+
       if (locLower && (
         (res.location && res.location.toLowerCase().includes(locLower)) ||
         (res.title && res.title.toLowerCase().includes(locLower)) ||
         (res.snippet && res.snippet.toLowerCase().includes(locLower))
       )) {
-        score += 40; 
+        score += 40;
       }
-      
+
       return { ...res, score };
     });
 
@@ -208,7 +208,7 @@ class ResearchService {
 
     const selected = [];
     const titles = new Set();
-    
+
     const tryAdd = (item) => {
       if (selected.length >= topK) return false;
       const baseTitle = item.title.toLowerCase().trim().slice(0, 50);
