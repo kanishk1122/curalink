@@ -14,9 +14,8 @@ const { globalLimiter } = require('./middlewares/rate-limit.middleware');
 dotenv.config();
 
 const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://whale-app-a4lge.ondigitalocean.app'
+  'https://whale-app-a4lge.ondigitalocean.app',
+  'https://curalink-nine.vercel.app'
 ];
 
 const corsOptions = {
