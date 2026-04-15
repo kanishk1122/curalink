@@ -49,7 +49,7 @@ class ResearchService {
         };
       });
     } catch (error) {
-      console.error('PubMed Fetch Error:', error.message);
+      console.error('PubMed Fetch Error:', error.response?.data || error.message);
       return [];
     }
   }
@@ -117,7 +117,7 @@ class ResearchService {
         };
       });
     } catch (error) {
-      console.error('ClinicalTrials Fetch Error:', error.message);
+      console.error('ClinicalTrials Fetch Error:', error.response?.data || error.message);
       return [];
     }
   }

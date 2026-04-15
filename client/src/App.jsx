@@ -16,7 +16,9 @@ import {
 import { fetchProfile, logout } from './store/authSlice';
 import AuthModal from './components/AuthModal';
 
-const socket = io('http://localhost:5000');
+const socket = io('https://whale-app-a4lge.ondigitalocean.app', {
+  withCredentials: true
+});
 
 /* ─── Reusable spring config ─── */
 const spring = { type: 'spring', stiffness: 380, damping: 30 };
@@ -185,8 +187,8 @@ const ChatItem = React.memo(({ chat, active, streaming, onClick }) => (
 /* ─── Empty state ─── */
 const EmptyState = React.memo(({ disease, onSuggestion }) => (
   <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} transition={softSpring} className="h-[60vh] flex flex-col items-center justify-center text-center gap-8">
-    <motion.div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-blue-50 to-white border border-blue-100 flex items-center justify-center shadow-sm" animate={{ y: [0, -8, 0] }} transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}>
-      <Heart size={42} className="text-blue-500 fill-blue-100" />
+    <motion.div className="w-44 h-44 rounded-[2.5rem] bg-white border border-slate-100 flex items-center justify-center shadow-2xl shadow-slate-200/60 p-0 overflow-hidden" animate={{ y: [0, -10, 0] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}>
+      <img src="/complete_logo.png" alt="Curalink Logo" className="w-full h-full object-contain" />
     </motion.div>
     <div>
       <h2 className="text-3xl font-bold text-slate-900 tracking-tight mb-3">{disease ? `Researching ${disease}` : 'Welcome to Curalink'}</h2>
@@ -316,12 +318,12 @@ export default function App() {
             className="border-r border-slate-100 flex flex-col bg-slate-50/60 flex-shrink-0 z-10 overflow-hidden"
           >
             <div className="p-7 pb-5 min-w-[288px]">
-              <div className="flex items-center gap-3 mb-8">
-                <motion.div whileHover={{ rotate: 10, scale: 1.05 }} transition={spring} className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-200">
-                  <Heart size={20} className="text-white fill-white" />
+              <div className="flex items-center gap-4 mb-8">
+                <motion.div whileHover={{ scale: 1.05 }} transition={spring} className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center shadow-md border border-slate-100 p-0 overflow-hidden">
+                  <img src="/logoset/android-chrome-192x192.png" alt="Logo" className="w-full h-full object-contain" />
                 </motion.div>
                 <div>
-                  <h1 className="text-xl font-bold tracking-tight text-slate-900">Curalink</h1>
+                  <h1 className="text-2xl font-bold tracking-tighter text-slate-900 leading-tight">Curalink</h1>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Health Companion</span>
                 </div>
               </div>
@@ -485,24 +487,40 @@ export default function App() {
 
 const FocusModal = ({ dispatch, disease, location }) => (
   <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 text-slate-800">
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => dispatch(setShowModal(false))} />
-    <motion.div initial={{ opacity: 0, y: 80, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 80, scale: 0.95 }} className="relative w-full sm:max-w-md bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl p-8 sm:p-10">
-      <div className="absolute top-0 left-0 right-0 h-1 bg-blue-600 rounded-t-3xl" />
-      <button onClick={() => dispatch(setShowModal(false))} className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400"><X size={18} /></button>
-      <div className="mb-7">
-        <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mb-5"><Heart className="text-blue-600 fill-blue-100" size={28} /></div>
-        <h3 className="text-2xl font-bold text-slate-900 mb-1.5">Let's set your focus</h3>
-        <p className="text-sm text-slate-400">Tell me the condition so I can find the most relevant research for you.</p>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => dispatch(setShowModal(false))} />
+    <motion.div initial={{ opacity: 0, y: 80, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 80, scale: 0.95 }} className="relative w-full sm:max-w-md bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden p-8 sm:p-10">
+      <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 to-teal-400" />
+      <button onClick={() => dispatch(setShowModal(false))} className="absolute top-5 right-5 p-2.5 rounded-full hover:bg-slate-100 text-slate-400 transition-colors"><X size={18} /></button>
+      
+      <div className="mb-8">
+        <motion.div whileHover={{ scale: 1.05 }} transition={spring} className="w-16 h-16 rounded-2xl bg-white border border-slate-100 flex items-center justify-center mb-6 shadow-xl shadow-slate-200/50 p-0 overflow-hidden">
+          <img src="/complete_logo.png" alt="Curalink" className="w-full h-full object-contain" />
+        </motion.div>
+        <h3 className="text-2xl font-black text-slate-900 mb-2 tracking-tight">Let's set your focus</h3>
+        <p className="text-sm text-slate-400 leading-relaxed">Define your condition to enable high-authority medical synthesis tailored to your needs.</p>
       </div>
-      <div className="space-y-5">
+
+      <div className="space-y-6">
         <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Condition or Disease</label>
-          <input value={disease} onChange={e => dispatch(setDisease(e.target.value))} onKeyDown={e => e.key === 'Enter' && disease.trim() && dispatch(setShowModal(false))} placeholder="e.g. Type 2 Diabetes" autoFocus className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-semibold outline-none focus:border-blue-300" />
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2.5">Condition or Disease</label>
+          <input value={disease} onChange={e => dispatch(setDisease(e.target.value))} onKeyDown={e => e.key === 'Enter' && disease.trim() && dispatch(setShowModal(false))} placeholder="e.g. Type 2 Diabetes" autoFocus className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-4 py-4 text-[15px] font-bold outline-none focus:border-blue-400 focus:bg-white transition-all placeholder:text-slate-300" />
         </div>
         <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Your Location (optional)</label>
-          <div className="relative"><MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={15} /><input value={location} onChange={e => dispatch(setLocation(e.target.value))} placeholder="e.g. New York, USA" className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3.5 text-sm font-semibold outline-none focus:border-blue-300" /></div>
+          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2.5">Your Location (optional)</label>
+          <div className="relative">
+            <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+            <input value={location} onChange={e => dispatch(setLocation(e.target.value))} placeholder="e.g. New York, USA" className="w-full bg-slate-50/50 border border-slate-200 rounded-xl pl-12 pr-4 py-4 text-[15px] font-bold outline-none focus:border-blue-400 focus:bg-white transition-all placeholder:text-slate-300" />
+          </div>
         </div>
+
+        <AnimatedButton 
+          disabled={!disease.trim()} 
+          onClick={() => dispatch(setShowModal(false))} 
+          className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 disabled:opacity-30 shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-3 mt-4"
+        >
+          <Sparkles size={16} />
+          Start Researching
+        </AnimatedButton>
       </div>
     </motion.div>
   </div>

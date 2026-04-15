@@ -12,6 +12,9 @@ dotenv.config();
 
 const app = express();
 
+// CLOUD PROXY TRUST (Required for DigitalOcean/Rate Limiting)
+app.set('trust proxy', 1);
+
 // SECURITY HEADERS
 app.use(helmet());
 

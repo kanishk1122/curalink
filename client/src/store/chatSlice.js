@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { logout } from './authSlice';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://whale-app-a4lge.ondigitalocean.app/api';
 
 const api = axios.create({
   baseURL: API_BASE,
