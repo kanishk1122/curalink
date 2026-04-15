@@ -24,9 +24,7 @@ class ResearchService {
 
     // Identity headers for medical authority (NCBI Recommended Format)
     this.headers = {
-      'User-Agent': 'CuralinkBackend/1.0 (mailto:kanishk21soni@gmail.com)',
-      'Accept': 'application/json, text/plain, */*',
-      'Referer': 'https://curalink.ai'
+      'User-Agent': 'CuralinkBackend/1.0 (mailto:kanishk21soni@gmail.com)'
     };
   }
 
