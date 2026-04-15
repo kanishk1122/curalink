@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector, useDispatch } from 'react-redux';
 import { 
   fetchChats, fetchContext, loadChat, sendMessage, addProgress, 
-  resetResearch, addLocalMessage, appendStreamChunk, setShowModal,
+  resetResearch, addLocalMessage, appendStreamChunk, appendStreamBatch, setShowModal,
   setDisease, setLocation, toggleSidebar, claimChats, completeStreaming
 } from './store/chatSlice';
 import { fetchProfile, logout } from './store/authSlice';
@@ -235,6 +235,7 @@ export default function App() {
   const chatEndRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const inputRef = useRef(null);
+  const chunkBufferRef = useRef({});
 
   const scrollToBottom = (behavior = 'smooth') => {
     chatEndRef.current?.scrollIntoView({ behavior });
@@ -252,11 +253,30 @@ export default function App() {
 
   useEffect(() => {
     socket.on('chat:chunk', ({ chatId, chunk }) => {
-      dispatch(appendStreamChunk({ chatId, chunk }));
+      if (!chunkBufferRef.current[chatId]) {
+        chunkBufferRef.current[chatId] = "";
+      }
+      chunkBufferRef.current[chatId] += chunk;
     });
+
+    // Throttled Flush Engine (150ms heartbeat)
+    const flushInterval = setInterval(() => {
+      const buffer = chunkBufferRef.current;
+      if (Object.keys(buffer).length > 0) {
+        dispatch(appendStreamBatch(buffer));
+        chunkBufferRef.current = {};
+      }
+    }, 150);
+
     socket.on('chat:done', (data) => {
+      // Flush any remaining bit in the buffer before finishing
+      const buffer = chunkBufferRef.current;
+      if (buffer[data.chatId]) {
+        dispatch(appendStreamBatch({ [data.chatId]: buffer[data.chatId] }));
+        delete chunkBufferRef.current[data.chatId];
+      }
+      
       dispatch(completeStreaming(data));
-      // Refresh chats list to get the finalized title/message from DB
       dispatch(fetchChats());
     });
     socket.on('progress', (data) => {
@@ -266,6 +286,7 @@ export default function App() {
       socket.off('chat:chunk');
       socket.off('chat:done');
       socket.off('progress');
+      clearInterval(flushInterval);
     };
   }, [dispatch]);
 

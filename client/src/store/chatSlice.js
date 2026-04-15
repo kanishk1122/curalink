@@ -113,6 +113,38 @@ const chatSlice = createSlice({
     addLocalMessage: (state, action) => {
       state.messages.push({ ...action.payload, id: Date.now().toString() });
     },
+    appendStreamBatch: (state, action) => {
+      const batches = action.payload; // { [chatId]: chunk }
+      
+      Object.entries(batches).forEach(([chatId, chunk]) => {
+        if (!state.streamingBuffers[chatId]) {
+          state.streamingBuffers[chatId] = "";
+          if (!state.activeStreamIds.includes(chatId)) {
+            state.activeStreamIds.push(chatId);
+          }
+        }
+        state.streamingBuffers[chatId] += chunk;
+        
+        // Adoption logic for new chats
+        if (!state.activeChatId && state.loading) {
+          state.activeChatId = chatId;
+        }
+
+        if (chatId === state.activeChatId) {
+          state.isStreaming = true;
+          const lastMsg = state.messages[state.messages.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant' && lastMsg.id === 'streaming-asst-' + chatId) {
+            lastMsg.content += chunk;
+          } else {
+            state.messages.push({ 
+              id: 'streaming-asst-' + chatId, 
+              role: 'assistant', 
+              content: chunk 
+            });
+          }
+        }
+      });
+    },
     appendStreamChunk: (state, action) => {
       const { chatId, chunk } = action.payload;
       
@@ -124,7 +156,6 @@ const chatSlice = createSlice({
       }
       state.streamingBuffers[chatId] += chunk;
       
-      // If we are in 'New Research' mode (null) and we get our first chunk, adopt this chatId immediately
       if (!state.activeChatId && state.loading) {
         state.activeChatId = chatId;
       }
@@ -256,9 +287,8 @@ const chatSlice = createSlice({
 });
 
 export const { 
-  setDisease, setLocation, setShowModal, setSidebarOpen, toggleSidebar,
-  setActiveChat, clearMessages, addProgress, resetResearch,
-  addLocalMessage, appendStreamChunk, completeStreaming
+  resetResearch, addProgress, appendStreamChunk, appendStreamBatch, completeStreaming, 
+  setShowModal, setDisease, setLocation, toggleSidebar, addLocalMessage, setActiveChat, clearMessages
 } = chatSlice.actions;
 
 export default chatSlice.reducer;
