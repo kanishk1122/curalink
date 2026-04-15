@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String?
+  name      String?
+  chats     Chat[]
+  createdAt DateTime @default(now())
+}
+
+model Chat {
+  id        String    @id @default(uuid())
+  title     String
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id])
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  role      String   // 'user' or 'assistant'
+  content   String   @db.Text
+  sources   Source[]
+  createdAt DateTime @default(now())
+}
+
+model Source {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  title     String
+  url       String   @db.Text
+  authors   String?
+  year      String?
+  platform  String   // 'PubMed', 'OpenAlex', 'ClinicalTrials.gov'
+  snippet   String?  @db.Text
+  type      String   // 'Publication' or 'Trial'
+  status    String?  // For clinical trials: Recruiting, etc.
+  location  String?  // For clinical trials
+}
