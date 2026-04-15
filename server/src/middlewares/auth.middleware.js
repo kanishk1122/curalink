@@ -1,5 +1,8 @@
 const jwt = require('jsonwebtoken');
 
+// High-speed auth memoization (1-min cache)
+const authCache = new Map();
+
 /**
  * Protect route - requires valid JWT cookie
  */
@@ -7,9 +10,21 @@ const protect = async (req, res, next) => {
   let token = req.cookies.token;
 
   if (token) {
+    // 1. Check local memoization (Ultra-fast, sub-ms)
+    const cached = authCache.get(token);
+    if (cached && Date.now() < cached.expiry) {
+      req.user = cached.user;
+      return next();
+    }
+
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = { id: decoded.id };
+      const user = { id: decoded.id };
+      
+      // 2. Hydrate cache
+      authCache.set(token, { user, expiry: Date.now() + 60000 });
+      
+      req.user = user;
       return next();
     } catch (error) {
       console.error('Auth error:', error);

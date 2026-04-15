@@ -178,50 +178,54 @@ const setupSocketHandlers = (io) => {
 };
 
 const getChatHistory = async (req, res) => {
+  const start = Date.now();
   const { id } = req.params;
-  const { cursor, limit = 20 } = req.query; // Cursor is the 'createdAt' timestamp of the oldest message
+  const { cursor, limit = 20 } = req.query;
   const userId = req.user?.id || null;
   const sessionId = req.sessionId;
 
   try {
-    // 1. Try Cache for the initial page (no cursor)
     const cacheKey = `history:${id}:${cursor || 'start'}`;
     if (!cursor) {
       const cached = await redis.get(cacheKey);
-      if (cached) return res.json(cached);
+      if (cached) {
+        console.log(`[Perf] getChatHistory (Cache Hit): ${Date.now() - start}ms`);
+        return res.json(cached);
+      }
     }
 
-    const chat = await prisma.chat.findUnique({
+    // High-performance targeted fetch using the new chatId index
+    const chatPromise = prisma.chat.findUnique({
       where: { id },
       include: { 
         messages: { 
           include: { sources: true },
           take: parseInt(limit),
           ...(cursor && { 
-            skip: 1, // Skip the cursor message itself
+            skip: 1,
             cursor: { id: cursor } 
           }),
-          orderBy: { createdAt: 'desc' } // Fetch newest first for pagination
+          orderBy: { createdAt: 'desc' }
         } 
       }
     });
 
+    const [chat] = await Promise.all([chatPromise]);
+
     if (!chat) return res.status(404).json({ error: 'Chat not found' });
 
-    // STRICT OWNER VALIDATION
     const isOwner = chat.userId ? (chat.userId === userId) : (chat.sessionId === sessionId);
     if (!isOwner) {
-      return res.status(403).json({ error: 'Not authorized to view this research history' });
+      return res.status(403).json({ error: 'Not authorized' });
     }
 
-    // Re-sort to ascending for the client view
     chat.messages.reverse();
 
-    // Cache initial view for 5 mins
     if (!cursor) {
       await redis.set(cacheKey, chat, { ex: 300 });
     }
 
+    console.log(`[Perf] getChatHistory (DB Fetch): ${Date.now() - start}ms`);
     res.json(chat);
   } catch (error) {
     console.error('GetHistory Error:', error);
@@ -230,35 +234,38 @@ const getChatHistory = async (req, res) => {
 };
 
 const listChats = async (req, res) => {
+  const start = Date.now();
   try {
     const userId = req.user?.id || null;
     const sessionId = req.sessionId;
     const { page = 1, limit = 50 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // 1. Try Cache
     const cacheKey = `chats:${userId || sessionId}`;
-    // Only cache the first page for simplicity
     if (parseInt(page) === 1) {
       const cached = await redis.get(cacheKey);
-      if (cached) return res.json(cached);
+      if (cached) {
+        console.log(`[Perf] listChats (Cache Hit): ${Date.now() - start}ms`);
+        return res.json(cached);
+      }
     }
 
-    // Filter strictly by the current user session
     const chats = await prisma.chat.findMany({
       where: userId ? { userId } : { userId: null, sessionId },
       orderBy: { updatedAt: 'desc' },
-      skip,
-      take: parseInt(limit)
+      take: parseInt(limit),
+      skip
     });
 
     if (parseInt(page) === 1) {
-      await redis.set(cacheKey, chats, { ex: 600 }); // Cache for 10 mins
+      await redis.set(cacheKey, chats, { ex: 300 });
     }
 
+    console.log(`[Perf] listChats (DB Fetch): ${Date.now() - start}ms`);
     res.json(chats);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch chats' });
+    console.error('ListChats Error:', error);
+    res.status(500).json({ error: 'Failed to list research' });
   }
 };
 
