@@ -97,7 +97,8 @@ const FocusModal = ({
   useEffect(() => {
     if (isOpen) {
       setLoading(p => ({ ...p, countries: true }));
-      axios.get('/api/location/countries')
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      axios.get(`${apiBase}/location/countries`)
         .then(res => setCountries(res.data))
         .catch(err => console.error('Failed to fetch countries', err))
         .finally(() => setLoading(p => ({ ...p, countries: false })));
@@ -136,7 +137,8 @@ const FocusModal = ({
         setStates([]);
         setSelectedState(null);
       }
-      axios.get(`/api/location/${selectedCountry.code}/states`)
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      axios.get(`${apiBase}/location/${selectedCountry.code}/states`)
         .then(res => setStates(res.data))
         .catch(err => console.error('Failed to fetch states', err))
         .finally(() => setLoading(p => ({ ...p, states: false })));

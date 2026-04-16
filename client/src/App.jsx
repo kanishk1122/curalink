@@ -194,7 +194,8 @@ function MainApp() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await axios.post('/api/docs/analyze', formData, {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      const res = await axios.post(`${apiBase}/docs/analyze`, formData, {
         withCredentials: true,
         headers: { 'Content-Type': 'multipart/form-data' }
       });
